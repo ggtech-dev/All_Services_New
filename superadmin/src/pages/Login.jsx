@@ -41,7 +41,7 @@ export default function Login() {
   const p = PORTALS[portal];
   const go = (next) => {
     setError('');
-    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }) }, { replace: true });
+    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }) }, { replace: true, state: location.state }); // keep "where to go after login" when switching tabs
   };
   const done = () => navigate(portal === 'user' ? location.state?.from || '/' : HOME[portal], { replace: true });
 

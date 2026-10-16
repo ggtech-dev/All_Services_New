@@ -4,9 +4,37 @@ import { countOf, nextQty, prevQty } from './qty.js';
 import { dataUrlToFile, shrinkPhoto } from './photos.js';
 import { askConfirm } from './components/ConfirmDialog.jsx';
 
-// Shopping cart kept in this browser, per logged-in user. Prices here are only for display:
-// the server recalculates everything from the database when the order is placed.
+// Shopping cart kept in this browser, per logged-in user — or for a guest who is just looking around. At sign-in
+// the guest's cart moves into the account. Prices here are only for display: the server recalculates everything
+// from the database when the order is placed.
 const CartContext = createContext(null);
+
+// At sign-in: the guest's cart, own list, list photo and cart mode (instant or normal) move into the account.
+// Same kind of cart on both sides → combined; otherwise the guest's (newest) choice wins. Safe to call often.
+function adoptGuestCart(userId) {
+  try {
+    const get = (k) => JSON.parse(localStorage.getItem(k));
+    const gItems = get('as_cart_guest') || [];
+    const gLines = (get('as_list_guest') || []).filter((l) => l.name?.trim());
+    const gPhoto = get('as_list_guest_photo');
+    if (!gItems.length && !gLines.length && !gPhoto) return;
+    const gVia = get('as_cart_guest_via');
+    const uItems = get(`as_cart_${userId}`) || [];
+    const uLines = get(`as_list_${userId}`) || [];
+    const uVia = get(`as_cart_${userId}_via`);
+    const sameKind = (gVia?.id || null) === (uVia?.id || null);
+    const items = sameKind ? [...uItems.filter((u) => !gItems.some((g) => g.product_id === u.product_id)), ...gItems] : gItems;
+    const lines = sameKind ? [...uLines.filter((l) => l.name?.trim()), ...gLines] : gLines;
+    localStorage.setItem(`as_cart_${userId}`, JSON.stringify(items));
+    localStorage.setItem(`as_list_${userId}`, JSON.stringify(lines));
+    if (gPhoto) localStorage.setItem(`as_list_${userId}_photo`, JSON.stringify(gPhoto));
+    if (gVia) localStorage.setItem(`as_cart_${userId}_via`, JSON.stringify(gVia));
+    else if (!sameKind) localStorage.removeItem(`as_cart_${userId}_via`);
+    for (const k of ['as_cart_guest', 'as_list_guest', 'as_list_guest_photo', 'as_cart_guest_via']) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable: nothing to move */
+  }
+}
 
 const read = (key) => {
   try {
@@ -18,7 +46,9 @@ const read = (key) => {
 
 export function CartProvider({ children }) {
   const { user } = useAuth();
-  const key = user ? `as_cart_${user.id}` : null;
+  if (user) adoptGuestCart(user.id);
+  const who = user ? user.id : 'guest';
+  const key = `as_cart_${who}`;
   // The cart remembers whose it is, so switching users never writes one user's cart into another's.
   const [cart, setCart] = useState(() => ({ key, items: key ? read(key) : [] }));
   if (cart.key !== key) setCart({ key, items: key ? read(key) : [] });
@@ -36,7 +66,7 @@ export function CartProvider({ children }) {
 
   // The customer's own list (kirana…): typed lines and a (made smaller) photo of a handwritten list are kept
   // like the cart, so a page reload doesn't lose them.
-  const listKey = user ? `as_list_${user.id}` : null;
+  const listKey = `as_list_${who}`;
   const readPhoto = (k) => {
     try {
       return JSON.parse(localStorage.getItem(`${k}_photo`)) || null;
@@ -62,7 +92,7 @@ export function CartProvider({ children }) {
 
   // ⚡ Instant Delivery has its own cart mode: { id, name, slug } while the cart holds an instant order, else null.
   // Instant items and normal items never mix (they go to different agents and have different delivery times).
-  const viaKey = user ? `as_cart_${user.id}_via` : null;
+  const viaKey = `as_cart_${who}_via`;
   const readVia = (k) => {
     try {
       return JSON.parse(localStorage.getItem(k)) || null;

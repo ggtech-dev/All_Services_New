@@ -1,4 +1,4 @@
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useCart } from '../cart.jsx';
 import CityPicker from './CityPicker.jsx';
@@ -8,6 +8,7 @@ import { has } from '../appKind.js';
 export default function Navbar() {
   const { user, logout } = useAuth();
   const cart = useCart();
+  const location = useLocation();
   return (
     <header className="navbar">
       <div className="container navbar-inner">
@@ -17,6 +18,15 @@ export default function Navbar() {
         </Link>
         <CityPicker compact />
         <div className="nav-right">
+          {!user ? (
+            <>
+              <NavLink to="/checkout" className="btn btn-ghost cart-link" aria-label={`Cart, ${cart.count} items`}>
+                🛒 <span className="hide-sm">Cart</span>
+                {cart.count > 0 && <span className="cart-count">{cart.count}</span>}
+              </NavLink>
+              <Link to="/login" state={{ from: location.pathname + location.search }} className="btn btn-primary btn-sm nav-login">Log in</Link>
+            </>
+          ) : (<>
           <span className="nav-user">
             Hi, <b>{user.fullName || user.username}</b>
             {user.role !== 'customer' && <span className="role-badge">{user.role}</span>}
@@ -30,6 +40,7 @@ export default function Navbar() {
             {cart.count > 0 && <span className="cart-count">{cart.count}</span>}
           </NavLink>
           <button className="btn btn-ghost" onClick={logout} title="Logout" aria-label="Logout">🚪 <span className="hide-sm">Logout</span></button>
+          </>)}
         </div>
       </div>
       {/* language + install: bottom-left corner */}

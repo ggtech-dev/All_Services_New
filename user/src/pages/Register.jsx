@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import AuthLayout from './AuthLayout.jsx';
@@ -8,6 +8,7 @@ import AuthLayout from './AuthLayout.jsx';
 export default function Register() {
   const { user, completeRegistration } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation(); // a guest who was on its way to checkout comes back there
   const [form, setForm] = useState({ fullName: '', phone: '', email: '', username: '', password: '', confirm: '' });
   const [step, setStep] = useState('details'); // 'details' | 'code'
   const [info, setInfo] = useState(null);
@@ -22,7 +23,7 @@ export default function Register() {
     return () => clearTimeout(t);
   }, [wait]);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={location.state?.from || '/'} replace />;
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
@@ -56,7 +57,7 @@ export default function Register() {
     setBusy(true);
     try {
       await completeRegistration(form.email.trim(), code);
-      navigate('/', { replace: true });
+      navigate(location.state?.from || '/', { replace: true });
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -111,7 +112,7 @@ export default function Register() {
         {error && <div className="alert">{error}</div>}
         <button className="btn btn-primary" disabled={busy}>{busy ? 'Sending code…' : 'Continue — send code to my email'}</button>
       </form>
-      <p className="switch">Already have an account? <Link to="/login">Login</Link></p>
+      <p className="switch">Already have an account? <Link to="/login" state={location.state}>Login</Link></p>
     </AuthLayout>
   );
 }

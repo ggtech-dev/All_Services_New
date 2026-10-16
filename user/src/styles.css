@@ -854,3 +854,7 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 
 /* in-app confirmation box */
 .confirm-text { white-space: pre-line; margin: 0; font-size: 15px; line-height: 1.5; }
+
+/* guest browsing: "Log in" in the top bar, "Continue as guest" under the login form */
+.nav-login { white-space: nowrap; }
+.guest-link { margin-top: 10px; }

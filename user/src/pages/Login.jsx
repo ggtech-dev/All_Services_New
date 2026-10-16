@@ -36,12 +36,12 @@ export default function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to={homeFor(user.role)} replace />;
+  if (user) return <Navigate to={user.role === 'customer' ? location.state?.from || '/' : homeFor(user.role)} replace />;
 
   const p = PORTALS[portal];
   const go = (next) => {
     setError('');
-    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }) }, { replace: true });
+    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }) }, { replace: true, state: location.state }); // keep "where to go after login" when switching tabs
   };
   const done = () => navigate(portal === 'user' ? location.state?.from || '/' : HOME[portal], { replace: true });
 
@@ -135,7 +135,12 @@ export default function Login() {
         </form>
       )}
 
-      {portal === 'user' && has('customer') && <p className="switch">New here? <Link to="/register">Create an account</Link></p>}
+      {portal === 'user' && has('customer') && <p className="switch">New here? <Link to="/register" state={location.state}>Create an account</Link></p>}
+      {portal === 'user' && has('customer') && (
+        <Link to={location.state?.from && !/^\/(checkout|orders|account)/.test(location.state.from) ? location.state.from : '/'} className="btn btn-ghost btn-block guest-link">
+          👀 Continue as guest — just looking
+        </Link>
+      )}
       {portal === 'agent' && has('agent') && <p className="switch">Want to work with us? <Link to="/agent/apply">Apply as an agent</Link></p>}
       {portal === 'admin' && <p className="switch">Franchise admin logins are created by HQ (Super Admin).</p>}
       {portal === 'superadmin' && <p className="switch">HQ only. Every login is recorded.</p>}
