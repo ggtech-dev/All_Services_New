@@ -6,7 +6,7 @@ name: allservices
 
 services:
   db:
-    image: postgres:18-alpine
+    image: postgres:${POSTGRES_VERSION:-18.3}-alpine   # same version as the old PC (18.3); change in .env
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${PGDATABASE:-all_services}
