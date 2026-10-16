@@ -1,0 +1,80 @@
+import { createContext, useContext, useEffect, useState } from 'react';
+import { AUTH_PROBLEM, api, getToken, setToken } from './api.js';
+import { dropPush, syncPush } from './alerts.js';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(!!getToken());
+
+  useEffect(() => {
+    if (!getToken()) return;
+    api('/auth/me')
+      .then((d) => setUser(d.user))
+      .catch(() => setToken(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // The server said "not logged in" / "not allowed": find out who this tab really is now.
+  // (Expired login → back to the login page; different role → the route guards send us to the right app.)
+  useEffect(() => {
+    const recheck = () => {
+      if (!getToken()) return setUser(null);
+      api('/auth/me')
+        .then((d) => setUser(d.user))
+        .catch(() => {
+          setToken(null);
+          setUser(null);
+        });
+    };
+    window.addEventListener(AUTH_PROBLEM, recheck);
+    return () => window.removeEventListener(AUTH_PROBLEM, recheck);
+  }, []);
+
+  const handleAuth = (d) => {
+    setToken(d.token);
+    setUser(d.user);
+    syncPush(); // device already allowed notifications → link it to this account
+  };
+
+  const value = {
+    user,
+    loading,
+    login: (username, password, portal = 'user') =>
+      api('/auth/login', { method: 'POST', body: { username, password, portal } }).then((d) => {
+        handleAuth(d);
+        return d.user;
+      }),
+    // Sign-up step 2: the code from the email creates the account and logs in.
+    completeRegistration: (email, code) =>
+      api('/auth/register/verify', { method: 'POST', body: { email, code } }).then((d) => {
+        handleAuth(d);
+        return d.user;
+      }),
+    // 📱 Mobile OTP: path /auth/phone/verify or /auth/phone/complete. New number → { needName, proof } (no login yet).
+    loginWithPhone: (path, body) =>
+      api(path, { method: 'POST', body }).then((d) => {
+        if (d.needName) return d;
+        handleAuth(d);
+        return d.user;
+      }),
+    // Log in with the 6-digit code emailed to the user.
+    loginWithCode: (email, code, portal = 'user') =>
+      api('/auth/otp/login', { method: 'POST', body: { email, code, portal } }).then((d) => {
+        handleAuth(d);
+        return d.user;
+      }),
+    // After profile changes (e.g. email verified), refresh the stored user.
+    setUser,
+    logout: async () => {
+      await dropPush(); // this device stops getting this account's notifications
+      setToken(null);
+      setUser(null);
+    },
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => useContext(AuthContext);

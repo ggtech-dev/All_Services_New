@@ -1,0 +1,27 @@
+# dependencies and builds (rebuilt on every machine)
+node_modules/
+dist/
+dev-dist/
+.vite/
+
+# secrets: copy server/.env.example to server/.env on each machine and fill it in
+.env
+.env.*
+!.env.example
+
+# uploaded files (product photos, documents) live on the server machine, not in git
+server/uploads/*
+!server/uploads/.gitkeep
+server/private_uploads/
+
+# database backups never go into git (customer data)
+*.dump
+*.sql.gz
+backups/
+
+# editors / OS / logs
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

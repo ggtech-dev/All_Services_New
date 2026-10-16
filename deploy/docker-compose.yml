@@ -1,0 +1,66 @@
+# All Services on one machine: PostgreSQL + API + the four apps.
+#   cd deploy && cp .env.example .env   (fill it in)   then:   docker compose up -d --build
+# Each app is reachable only on this machine (127.0.0.1:8081-8084); the machine's Nginx (nginx-host.conf) puts the
+# four domains with HTTPS in front of them. The database is never exposed outside Docker.
+name: allservices
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-all_services}
+      POSTGRES_USER: ${PGUSER:-all_services_user}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in deploy/.env}
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build: ../server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PGHOST: db
+      PGPORT: 5432
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads                 # public photos (products, services, promotions)
+      - private-uploads:/app/private_uploads # agent documents, bills, prescriptions (never public)
+
+  user:
+    build: ../user
+    restart: unless-stopped
+    depends_on: [server]
+    ports: ["127.0.0.1:8081:80"]
+
+  agent:
+    build: ../agent
+    restart: unless-stopped
+    depends_on: [server]
+    ports: ["127.0.0.1:8082:80"]
+
+  admin:
+    build: ../admin
+    restart: unless-stopped
+    depends_on: [server]
+    ports: ["127.0.0.1:8083:80"]
+
+  superadmin:
+    build: ../superadmin
+    restart: unless-stopped
+    depends_on: [server]
+    ports: ["127.0.0.1:8084:80"]
+
+volumes:
+  db-data:
+  uploads:
+  private-uploads:

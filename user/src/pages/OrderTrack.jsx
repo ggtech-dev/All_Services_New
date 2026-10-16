@@ -1,0 +1,240 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { api } from '../api.js';
+import { ACTIVE, STEPS, VEHICLES, rupees, secondsAgo, stepLabels, statusLabel, time, usePoll, when } from '../orderStatus.jsx';
+import MapView from '../components/LazyMap.jsx';
+import { CustomerShopBill } from '../components/ShopBill.jsx';
+import OrderExtras from '../components/OrderExtras.jsx';
+import { CustomerDoorPayment, doorPayment, feeLabel } from '../components/DeliveryCharge.jsx';
+import { cityOf, useSettings } from '../settings.js';
+import { qtyLabel } from '../qty.js';
+import RateOrder from '../components/RateOrder.jsx';
+import AlertsCard from '../components/AlertsCard.jsx';
+import { ReportProblem } from '../components/CustomerComplaints.jsx';
+import EventInfo from '../components/EventInfo.jsx';
+import { useAskReason } from '../components/AskReason.jsx';
+import TripInfo from '../components/TripInfo.jsx';
+import VisitInfo from '../components/VisitInfo.jsx';
+import Skeleton from '../components/Skeleton.jsx';
+
+// Live map of the assigned agent coming to the customer. Refreshes every 8 seconds.
+function LiveTrack({ orderId, who, icon }) {
+  const [live, setLive] = useState(null);
+  const load = useCallback(() => api(`/orders/${orderId}/live`).then(setLive).catch(() => {}), [orderId]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  usePoll(load, 8000);
+  if (!live) return null;
+
+  const markers = [{ id: 'home', lat: live.dest.lat, lng: live.dest.lng, emoji: '🏠', color: '#16a34a', label: live.dest.exact ? 'Your location' : 'Your area' }];
+  if (live.agent) markers.push({ id: 'agent', ...live.agent, emoji: icon || '🛵', color: '#4f46e5', pulse: true, label: `Your ${who}` });
+  const path = (live.trail || []).map((p) => [p.lat, p.lng]);
+
+  return (
+    <section className="panel live-panel">
+      <div className="live-head">
+        {live.agent ? (
+          <>
+            <b>{icon || '🛵'} {live.distance_km} km away · arriving in ~{live.eta_minutes} min</b>
+            <small className="muted">Updated {secondsAgo(live.agent.age_seconds)}</small>
+          </>
+        ) : (
+          <b className="muted">📡 Waiting for your {who}'s location…</b>
+        )}
+      </div>
+      <MapView markers={markers} path={path} fitKey={live.agent ? 'agent' : 'home'} height={300} />
+    </section>
+  );
+}
+
+// The reason of the last partner who gave the order back (if it is still waiting).
+const lastRelease = (order) => {
+  const e = [...(order.events || [])].reverse().find((x) => x.note?.startsWith('Released by agent'));
+  if (!e || order.events[order.events.length - 1] !== e) return null;
+  return e.note.replace(/^Released by agent:\s*/, '');
+};
+
+// Live tracking page for one order. Refreshes every 8 seconds while the order is active.
+export default function OrderTrack() {
+  const { id } = useParams();
+  const [params] = useSearchParams();
+  const [order, setOrder] = useState(null);
+  const settings = useSettings();
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [cancelError, setCancelError] = useState(''); // shown in the page (not a browser pop-up)
+  const [askReason, reasonBox] = useAskReason();
+
+  const load = useCallback(() => api(`/orders/${id}`).then(setOrder).catch((e) => setError(e.message)), [id]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  usePoll(load, 8000, !!order && ACTIVE.includes(order.status));
+
+  if (error) return <div className="alert">{error} — <Link to="/orders">My orders</Link></div>;
+  if (!order) return <Skeleton variant="page" />;
+
+  const isService = order.kind === 'service';
+  const pay = doorPayment(order, settings);
+  const who = (order.agent_title || (isService ? 'partner' : 'delivery partner')).toLowerCase();
+  const stepIndex = STEPS.indexOf(order.status);
+  const labels = stepLabels(order.kind);
+  const stepTime = { placed: order.created_at, assigned: order.assigned_at, picked_up: order.picked_up_at, delivered: order.delivered_at };
+  const canCancel = ['placed', 'assigned'].includes(order.status);
+
+  const cancel = async () => {
+    const reason = await askReason({ title: `Cancel ${order.kind === 'service' ? 'booking' : 'order'} #${order.id}?`, text: 'Why do you want to cancel?', okText: 'Yes, cancel it', cancelText: 'No, keep it' });
+    if (reason === null) return;
+    setCancelError('');
+    setBusy(true);
+    try {
+      await api(`/orders/${order.id}/cancel`, { method: 'POST', body: { reason } });
+      await load();
+    } catch (e) {
+      setCancelError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="track">
+      {reasonBox}
+      <Link to="/orders" className="back-link">← My orders</Link>
+      {params.get('new') && order.status === 'placed' && (
+        <div className="placed-banner">🎉 {isService ? 'Booking confirmed!' : 'Order placed!'} We're finding the nearest {who} for you.</div>
+      )}
+
+      <section className="panel track-head">
+        <div>
+          <small className="muted">{isService ? 'Booking' : 'Order'} #{order.id} · {when(order.created_at)}</small>
+          <h1>{statusLabel(order.status, order.kind)}</h1>
+          {order.status === 'placed' && <p className="muted">Waiting for a nearby {who} to accept…<span className="pulse" /></p>}
+          {order.status === 'assigned' && <p className="muted">{order.agent_name} accepted your {isService ? 'booking' : 'order'} and will {isService ? 'come' : 'pick it up'} soon.</p>}
+          {order.status === 'picked_up' && <p className="muted">{order.agent_name} is on the way to {order.locality_name}.</p>}
+          {order.status === 'delivered' && <p className="muted">{isService ? 'Completed' : 'Delivered'} at {time(order.delivered_at)}. Thank you!</p>}
+          {order.status === 'cancelled' && <p className="muted">Cancelled: {order.cancel_reason}</p>}
+        </div>
+        {order.otp_required && ['assigned', 'picked_up'].includes(order.status) && (
+          <div className="otp-box" title={`Share this code with the ${who} only when you receive the ${isService ? 'service' : 'order'}`}>
+            <small>Delivery OTP</small>
+            <b>{order.delivery_otp}</b>
+            <small>Share only at your door</small>
+          </div>
+        )}
+      </section>
+
+      {/* a partner gave the booking back: tell the customer why, and that the next partner will take it */}
+      {order.status === 'placed' && lastRelease(order) && (
+        <div className="partner-cancelled">
+          ⚠️ <b>{`Your ${who} had to cancel`}</b>: {lastRelease(order)}<br /><span>{"Don't worry — we're finding another partner for you."}</span>
+          {/* or the customer changes the details (date, time, place…) and books again — this booking is then cancelled */}
+          {order.service_slug && (
+            <div className="rebook-actions">
+              <Link className="btn btn-primary btn-sm" to={`/checkout?service=${order.service_slug}&rebook=${order.id}`}>✏️ Change details & book again</Link>
+            </div>
+          )}
+        </div>
+      )}
+      <EventInfo event={order.event_details} />
+      <TripInfo trip={order.trip_details} />
+      <VisitInfo visit={order.visit_details} type={order.service_name} notes={order.notes} />
+      <RateOrder order={order} who={who} onSaved={load} />
+      {ACTIVE.includes(order.status) && <AlertsCard who="customer" compact />}
+
+      {order.status !== 'cancelled' && (
+        <ol className="stepper-track">
+          {STEPS.map((s, i) => (
+            <li key={s} className={i < stepIndex ? 'done' : i === stepIndex ? 'current' : ''}>
+              <span className="step-dot">{i < stepIndex || order.status === 'delivered' ? '✓' : i + 1}</span>
+              <span className="step-label">{labels[i]}</span>
+              <small className="muted">{time(stepTime[s])}</small>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <OrderExtras order={order} filesBase={`/orders/${order.id}/files`} />
+      <CustomerShopBill order={order} onChanged={load} />
+      <CustomerDoorPayment order={order} />
+
+      {['assigned', 'picked_up'].includes(order.status) && <LiveTrack orderId={order.id} who={who} icon={order.skill_icon} />}
+
+      <div className="track-grid">
+        {order.agent_name && (
+          <section className="panel agent-card">
+            <div className="agent-avatar">{order.agent_name[0]}</div>
+            <div className="agent-info">
+              <small className="muted">Your {who} {order.skill_icon}</small>
+              <b>{order.agent_name}</b>
+              <small className="muted">{VEHICLES[order.vehicle_type]} {order.vehicle_number && `· ${order.vehicle_number}`}</small>
+            </div>
+            {ACTIVE.includes(order.status) && order.agent_phone && (
+              <a className="btn btn-primary btn-sm" href={`tel:${order.agent_phone}`}>📞 Call</a>
+            )}
+          </section>
+        )}
+
+        <section className="panel">
+          <h3>{isService ? 'Service' : 'Items'}</h3>
+          <ul className="summary-lines">
+            {order.items.map((i) => (
+              <li key={i.id}>
+                <span className="summary-icon">{i.icon || order.icon}</span>
+                <div className="summary-name">
+                  <b>{i.name}</b>
+                  <small className="muted">
+                    {i.sell_by === 'pack' ? <>{i.unit}{Number(i.qty) > 1 && ` · ${Number(i.qty)} × ${rupees(i.price)}`}</> : (i.sell_by === 'custom' ? i.unit : qtyLabel(i.qty, i.sell_by))}
+                  </small>
+                  {i.note && <small className="item-note">✂️ {i.note}</small>}
+                </div>
+                <span className="summary-price">{i.on_bill ? <small className="market-price">as per bill</small> : rupees(i.line_total)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="totals">
+            {order.bill_uploaded_at ? (
+              <>
+                <div><span className="muted">App estimate</span><s className="muted">{rupees(order.subtotal)}</s></div>
+                <div><span>Shop bill{order.bill_payment_mode === 'customer_upi' ? ' (paid to shop by UPI)' : ''}</span><span>{rupees(order.bill_amount)}</span></div>
+              </>
+            ) : (
+              <div><span>Items</span><span>{rupees(order.subtotal)}</span></div>
+            )}
+            {(!isService || Number(order.delivery_fee) > 0) && (
+              <div><span>{feeLabel(order)}{pay.fee > 0 && pay.feeMode === 'company_upi' ? ' (UPI to All Services)' : ''}</span><span>{pay.fee ? rupees(pay.fee) : <b className="free">FREE</b>}</span></div>
+            )}
+            <div className="grand">
+              <span>{order.status === 'delivered' ? 'Paid on delivery' : 'To pay on delivery'}</span>
+              <span>{rupees(pay.itemsCash + pay.fee)}</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <h3>Delivery to</h3>
+          <p className="address">
+            <b>{order.contact_name}</b> · {order.contact_phone}<br />
+            {order.address_line}<br />
+            {order.landmark && <>{order.landmark}<br /></>}
+            {order.locality_name}{order.pincode && ` – ${order.pincode}`}, {cityOf(settings)}
+          </p>
+          {order.slot && <p className="muted small">🕒 {order.slot}</p>}
+          {order.notes && <p className="muted small">📝 {order.notes}</p>}
+          <div className="order-help">
+            {canCancel && (
+              <button className="btn btn-ghost btn-sm danger-text" onClick={cancel} disabled={busy}>Cancel {isService ? 'booking' : 'order'}</button>
+            )}
+            {cancelError && <div className="alert">{cancelError}</div>}
+            {reported ? <small className="success-text">✓ Sent — we'll reply in My account</small>
+              : <button className="btn btn-ghost btn-sm" onClick={() => setReporting(true)}>🙋 Report a problem</button>}
+          </div>
+          {reporting && <ReportProblem orderId={order.id} onClose={() => setReporting(false)} onSent={() => { setReporting(false); setReported(true); }} />}
+        </section>
+      </div>
+    </div>
+  );
+}
