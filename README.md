@@ -10,10 +10,10 @@ Four **fully separate apps** — each has its own code, build and Docker image, 
 
 ```
 All_Services_New/
-├── user/         👤 Customer app        (Play Store app)        dev :5173 · allservicesggtech.com
-├── agent/        🛵 Agent / partner app                         dev :5174 · partner.allservicesggtech.com
-├── admin/        🛡️ Franchise admin app (one city)              dev :5175 · admin.allservicesggtech.com
-├── superadmin/   👑 Super Admin (HQ) app (all cities)           dev :5176 · hq.allservicesggtech.com
+├── user/         👤 Customer app        (Play Store app)        dev :5173 · allservicesapp.in
+├── agent/        🛵 Agent / partner app                         dev :5174 · partner.allservicesapp.in
+├── admin/        🛡️ Franchise admin app (one city)              dev :5175 · admin.allservicesapp.in
+├── superadmin/   👑 Super Admin (HQ) app (all cities)           dev :5176 · hq.allservicesapp.in
 ├── server/       API (Express) + database setup (db/*.sql)      :5000
 └── deploy/       docker-compose.yml, Nginx for the domains, daily backup script
 ```
@@ -73,7 +73,7 @@ Point the domains at the server's IP (DNS **A** records), then put the machine's
 sudo cp nginx-host.conf /etc/nginx/sites-available/allservices
 sudo ln -s /etc/nginx/sites-available/allservices /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d allservicesggtech.com -d partner.allservicesggtech.com -d admin.allservicesggtech.com -d hq.allservicesggtech.com
+sudo certbot --nginx -d allservicesapp.in -d www.allservicesapp.in -d partner.allservicesapp.in -d admin.allservicesapp.in -d hq.allservicesapp.in
 ```
 
 **Updates later:** `git pull && cd deploy && docker compose up -d --build && docker compose exec server npm run db:setup`
