@@ -1015,3 +1015,5 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 .account-switch button small { color: #6b7280; font-size: 12px; }
 .account-switch button.active { border-color: var(--primary, #4f46e5); background: #eef2ff; }
 .account-switch button.active b { color: var(--primary, #4f46e5); }
+
+.otp-instead { display: block; margin: 8px auto 0; font-weight: 600; }

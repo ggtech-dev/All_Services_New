@@ -105,7 +105,7 @@ router.post('/login', h(async (req, res) => {
     log(user?.id ?? null, null, 'login_failed', `password (${portal})`, ipOf(req));
     const noPassword = user && user.has_password === false;
     return res.status(401).json({
-      error: noPassword ? 'This account has no password yet. Log in with Mobile OTP, or use "Forgot password?" to set one.' : 'Wrong mobile number / username or password',
+      error: noPassword ? 'You haven\'t set a password yet. Tap "Login with OTP instead" once, or "Forgot password?" to create one.' : 'Wrong mobile number or password',
     });
   }
   const blocked = await portalError(user, portal);
@@ -210,12 +210,16 @@ router.post('/phone/complete', h(async (req, res) => {
   if (existing) return phoneLogin(req, res, existing, phone, 'user');
   const name = typeof req.body?.fullName === 'string' ? req.body.fullName.trim().replace(/\s+/g, ' ') : '';
   if (name.length < 2 || name.length > 60) return res.status(400).json({ error: 'Please enter your name (2–60 letters)' });
-  const randomPassword = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10); // they log in with OTP
+  // the password they create now is how they sign in next time (no OTP); without one they keep using OTP
+  const chosen = req.body?.password;
+  if (chosen != null && chosen !== '' && !validPassword(chosen)) return res.status(400).json({ error: PASSWORD_RULE });
+  const hasPassword = validPassword(chosen);
+  const randomPassword = await bcrypt.hash(hasPassword ? chosen : crypto.randomBytes(24).toString('hex'), 10);
   let username = `m${phone}`;
   for (let i = 2; (await query('SELECT 1 FROM users WHERE username = $1', [username])).rowCount; i++) username = `m${phone}_${i}`;
   const { rows } = await query(
     `INSERT INTO users (username, password_hash, full_name, phone, role, phone_verified_at, has_password)
-     VALUES ($1, $2, $3, $4, 'customer', now(), false) RETURNING *`, [username, randomPassword, name, phone]);
+     VALUES ($1, $2, $3, $4, 'customer', now(), $5) RETURNING *`, [username, randomPassword, name, phone, hasPassword]);
   log(rows[0].id, null, 'register', 'mobile OTP', ipOf(req));
   res.status(201).json({ token: signToken(rows[0]), user: publicUser(rows[0]) });
 }));

@@ -31,7 +31,11 @@ export default function Login() {
   // Customers and agents: 📱 mobile OTP first, or mobile number / username + password.
   // customers choose 👋 Sign in (existing) or 🆕 Sign up (new) — both by mobile OTP; a password only for Sign in
   const signup = portal === 'user' && params.get('mode') === 'signup';
-  const method = STAFF.includes(portal) ? 'password' : PASSWORD_LOGIN && !signup && params.get('method') === 'password' ? 'password' : 'phone';
+  // customer Sign in: mobile number + password first (the corporate way, no OTP); "Login with OTP instead" is a link.
+  // agents: mobile OTP first, or password. Admins: password.
+  const method = STAFF.includes(portal) ? 'password'
+    : portal === 'user' ? (signup || params.get('method') === 'otp' ? 'phone' : 'password')
+    : PASSWORD_LOGIN && params.get('method') === 'password' ? 'password' : 'phone';
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +46,8 @@ export default function Login() {
   const p = PORTALS[portal];
   const go = (next) => {
     setError('');
-    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }), ...(next.signup && { mode: 'signup' }) },
+    const m = next.portal === 'user' ? (next.method === 'phone' && !next.signup ? 'otp' : null) : next.method !== 'phone' ? next.method : null;
+    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(m && { method: m }), ...(next.signup && { mode: 'signup' }) },
       { replace: true, state: location.state }); // keep "where to go after login" when switching tabs
   };
   const done = () => navigate(portal === 'user' ? location.state?.from || '/' : HOME[portal], { replace: true });
@@ -67,7 +72,7 @@ export default function Login() {
     >
       {portal === 'user' && has('customer') && (
         <div className="account-switch" role="tablist" aria-label="Sign in or sign up">
-          <button type="button" role="tab" aria-selected={!signup} className={!signup ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>
+          <button type="button" role="tab" aria-selected={!signup} className={!signup ? 'active' : ''} onClick={() => go({ portal, method: 'password' })}>
             <b>👋 Sign in</b><small>I already have an account</small>
           </button>
           <button type="button" role="tab" aria-selected={signup} className={signup ? 'active' : ''} onClick={() => go({ portal, method: 'phone', signup: true })}>
@@ -83,7 +88,7 @@ export default function Login() {
         ))}
       </div>}
 
-      {!STAFF.includes(portal) && PASSWORD_LOGIN && !signup && (
+      {!STAFF.includes(portal) && portal !== 'user' && PASSWORD_LOGIN && (
         <div className="method-switch" role="tablist" aria-label="Login method">
           <button type="button" role="tab" aria-selected={method === 'phone'} className={method === 'phone' ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>📱 Mobile OTP</button>
           <button type="button" role="tab" aria-selected={method === 'password'} className={method === 'password' ? 'active' : ''} onClick={() => go({ portal, method: 'password' })}>🔑 Password</button>
@@ -105,13 +110,14 @@ export default function Login() {
       ) : (
         <form onSubmit={onSubmit} className="form">
           <label>
-            {STAFF.includes(portal) ? 'Username' : 'Mobile number or username'}
+            {STAFF.includes(portal) ? 'Username' : 'Mobile number'}
             <input
               autoFocus
               autoComplete="username"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              placeholder={STAFF.includes(portal) ? 'Admin username' : '10-digit mobile number or username'}
+              placeholder={STAFF.includes(portal) ? 'Admin username' : '10-digit mobile number'}
+              inputMode={STAFF.includes(portal) ? undefined : 'tel'}
               required
             />
           </label>
@@ -138,7 +144,11 @@ export default function Login() {
           <button className={`btn btn-primary ${STAFF.includes(portal) ? 'btn-dark' : portal === 'agent' ? 'btn-agent' : ''}`} disabled={busy}>
             {busy ? 'Logging in…' : p.button}
           </button>
+          {portal === 'user' && <button type="button" className="link-btn otp-instead" onClick={() => go({ portal, method: 'phone' })}>📱 Login with OTP instead</button>}
         </form>
+      )}
+      {portal === 'user' && !signup && method === 'phone' && (
+        <button type="button" className="link-btn otp-instead" onClick={() => go({ portal, method: 'password' })}>🔑 Login with password</button>
       )}
 
       {portal === 'user' && has('customer') && (

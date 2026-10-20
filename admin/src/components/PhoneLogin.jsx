@@ -18,6 +18,7 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [pw, setPw] = useState({ password: '', confirm: '' }); // customers create a password at sign-up
   const [info, setInfo] = useState(null); // answer of /phone/request (devCode in test mode)
   const [proof, setProof] = useState('');
   const [error, setError] = useState('');
@@ -74,9 +75,13 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
     e.preventDefault();
     setError('');
     if (name.trim().length < 2) return setError('Please enter your name');
+    if (portal === 'user') {
+      if (pw.password.length < 6) return setError('Create a password of at least 6 characters');
+      if (pw.password !== pw.confirm) return setError('The two passwords do not match');
+    }
     setBusy(true);
     try {
-      await login('/auth/phone/complete', { proof, fullName: name.trim() });
+      await login('/auth/phone/complete', { proof, fullName: name.trim(), ...(portal === 'user' && { password: pw.password }) });
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -99,7 +104,7 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
             </div>
           </label>
           <p className="muted small">{portal === 'user'
-            ? (isSignup ? "We'll send a 6-digit OTP to check your number, then ask your name. That's all." : "We'll send a 6-digit OTP to your mobile number.")
+            ? (isSignup ? "We'll send a 6-digit OTP to check your number. Then you choose your name and password." : "We'll send a 6-digit OTP to your mobile number.")
             : HINTS[portal] || HINTS.user}</p>
           {error && <div className="alert">{error}</div>}
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Sending OTP…' : 'Send OTP'}</button>
@@ -135,6 +140,19 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
             Your name
             <input value={name} onChange={(e) => setName(e.target.value.slice(0, 60))} autoComplete="name" placeholder="e.g. Ravi Kumar" required autoFocus />
           </label>
+          {portal === 'user' && (
+            <>
+              <label>
+                Create a password
+                <input type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} placeholder="At least 6 characters" required minLength={6} />
+              </label>
+              <label>
+                Confirm password
+                <input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} placeholder="Type it again" required />
+              </label>
+              <small className="muted">Next time, sign in with your mobile number and this password — no OTP needed.</small>
+            </>
+          )}
           {error && <div className="alert">{error}</div>}
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Creating your account…' : '🆕 Create my account'}</button>
         </form>
