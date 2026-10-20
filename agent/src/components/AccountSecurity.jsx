@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import EmailCode from './EmailCode.jsx';
 
-// Email (add / change with a verification code) and password change. Used on the customer Account page
-// and in the agent app Profile tab.
+// Mobile number and password. Used on the customer Account page and in the agent app Profile tab.
+// Accounts made by mobile OTP have no password yet: they can set one here (no "current password" needed).
 export default function AccountSecurity() {
   const { user, setUser } = useAuth();
-  const [changingEmail, setChangingEmail] = useState(!user.email);
+  const first = user.hasPassword === false;
   const [pw, setPw] = useState({ current: '', password: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -18,9 +17,10 @@ export default function AccountSecurity() {
     if (pw.password !== pw.confirm) return setPwMsg({ error: 'The two new passwords do not match' });
     setBusy(true);
     try {
-      await api('/auth/password/change', { method: 'POST', body: { current: pw.current, password: pw.password } });
+      const d = await api('/auth/password/change', { method: 'POST', body: { current: pw.current, password: pw.password } });
       setPw({ current: '', password: '', confirm: '' });
-      setPwMsg({ ok: 'Password changed ✅' });
+      setPwMsg({ ok: first ? 'Password set ✅ You can now also log in with your mobile number and password.' : 'Password changed ✅' });
+      if (d.user) setUser(d.user);
     } catch (err) {
       setPwMsg({ error: err.message });
     } finally {
@@ -31,45 +31,26 @@ export default function AccountSecurity() {
   return (
     <div className="account-grid">
       <section className="panel">
-        <h3>📧 Email</h3>
-        <p className="muted small">Used to log in with a code and to reset your password.</p>
-        {user.email && !changingEmail && (
-          <div className="email-row">
-            <b>{user.email}</b>
-            {user.emailVerified ? <span className="verified">✓ Verified</span> : <span className="unverified">Not verified yet</span>}
-            <button className="link-btn" onClick={() => setChangingEmail(true)}>Change</button>
-          </div>
-        )}
-        {changingEmail && (
-          <>
-            {!user.email && <div className="gap-alert small">Add your email so you can log in with a code and recover your account.</div>}
-            <EmailCode
-              requestPath="/auth/email/request"
-              emailLabel={user.email ? 'New email' : 'Your email'}
-              submitLabel="Confirm email"
-              onCode={async (email, code) => {
-                const d = await api('/auth/email/verify', { method: 'POST', body: { email, code } });
-                setUser(d.user);
-                setChangingEmail(false);
-              }}
-            />
-            {user.email && <button className="link-btn" onClick={() => setChangingEmail(false)}>Cancel</button>}
-          </>
-        )}
+        <h3>📱 Mobile number</h3>
+        <p className="muted small">You log in with this number and an OTP by SMS.</p>
+        <div className="email-row">
+          <b>{user.phone ? `+91 ${user.phone}` : 'Not added'}</b>
+        </div>
       </section>
 
       <section className="panel">
-        <h3>🔑 Change password</h3>
+        <h3>🔑 {first ? 'Set a password (optional)' : 'Change password'}</h3>
+        {first && <p className="muted small">Log in without waiting for an OTP: your mobile number + this password.</p>}
         <form className="form" onSubmit={changePassword}>
-          <label>Current password<input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} required /></label>
+          {!first && <label>Current password<input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} required /></label>}
           <div className="form-row">
             <label>New password<input type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} required minLength={6} placeholder="Min 6 characters" /></label>
             <label>Confirm<input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} required /></label>
           </div>
           {pwMsg?.error && <div className="alert">{pwMsg.error}</div>}
           {pwMsg?.ok && <div className="ok-msg">{pwMsg.ok}</div>}
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button>
-          <small className="muted">Forgot your current password? Log out and use “Forgot password?” on the login page.</small>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : first ? 'Set password' : 'Change password'}</button>
+          {!first && <small className="muted">Forgot your current password? Log out and use “Forgot password?” on the login page (OTP to your mobile).</small>}
         </form>
       </section>
     </div>

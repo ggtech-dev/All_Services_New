@@ -15,6 +15,6 @@ export async function sendOtpSms(phone, code) {
   if (!res.ok || body.Status !== 'Success') {
     // never log the API key; the provider's message is enough to see what went wrong
     console.error('2Factor SMS failed:', res.status, body.Details || body.Status || '');
-    throw Object.assign(new Error('We could not send the SMS right now. Please try again, or log in with email.'), { status: 502 });
+    throw Object.assign(new Error('We could not send the SMS right now. Please try again in a minute, or log in with your password.'), { status: 502 });
   }
 }

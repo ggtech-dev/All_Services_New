@@ -7,6 +7,15 @@ import { getScope } from '../scope.js';
 
 // Service areas (localities) customers choose at checkout; also used to find the nearest agent.
 // Areas are never deleted — old orders point to them — they are switched off instead.
+// 🏡 Villages (within 15 km of town) are areas too: only 🏡 Village Needs delivers there (next day, our own staff), with the
+// village charge of their distance band (up to 10 km / 10–15 km), set by the franchise admin at the top of this page.
+
+// straight-line km between two points (a hint — road distance is a bit more)
+const kmBetween = (a, b) => {
+  const r = (x) => (x * Math.PI) / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+  return Math.round(12742 * Math.asin(Math.sqrt(h)) * 10) / 10;
+};
 export default function Areas() {
   const toast = useToast();
   const list = useLoad(() => api('/admin/localities'));
@@ -18,6 +27,8 @@ export default function Areas() {
   const [showOff, setShowOff] = useState(false);
 
   const areas = list.data || [];
+  const towns = areas.filter((a) => a.is_active && !a.is_village);
+  const townCenter = towns.length ? { lat: towns.reduce((n, a) => n + Number(a.lat), 0) / towns.length, lng: towns.reduce((n, a) => n + Number(a.lng), 0) / towns.length } : null;
   const shown = areas.filter((a) => showOff || a.is_active);
   const offCount = areas.filter((a) => !a.is_active).length;
 
@@ -41,12 +52,14 @@ export default function Areas() {
         <button className="btn btn-primary" onClick={() => setEditing({ name: '', pincode: '', lat: null, lng: null, is_active: true })}>➕ Add area</button>
       </div>
 
+      <VillageFees />
+
       <section className="panel">
         <MapView
           height={340}
           fitKey={`${list.data ? 'ok' : ''}-${showOff}`}
           markers={shown.map((a) => ({
-            id: a.id, lat: Number(a.lat), lng: Number(a.lng), emoji: '📍', color: a.is_active ? '#4f46e5' : '#94a3b8',
+            id: a.id, lat: Number(a.lat), lng: Number(a.lng), emoji: a.is_village ? '🏡' : '📍', color: !a.is_active ? '#94a3b8' : a.is_village ? '#65a30d' : '#4f46e5',
             label: `${a.name}${a.is_active ? '' : ' (off)'}`, onClick: () => setEditing(a),
           }))}
         />
@@ -59,11 +72,14 @@ export default function Areas() {
         </div>
         <div className="table-scroll">
           <table className="table">
-            <thead><tr><th>Area</th>{hq && <th>Franchise</th>}<th>Pincode</th><th>Orders</th><th>Agents</th><th>On</th><th aria-label="Edit" /></tr></thead>
+            <thead><tr><th>Area</th><th>Type</th>{hq && <th>Franchise</th>}<th>Pincode</th><th>Orders</th><th>Agents</th><th>On</th><th aria-label="Edit" /></tr></thead>
             <tbody>
               {shown.map((a) => (
                 <tr key={a.id} className={a.is_active ? '' : 'row-muted'}>
                   <td><b>{a.name}</b></td>
+                  <td className="small">{a.is_village
+                    ? <span className="village-tag">🏡 Village · {a.village_band === 1 ? 'up to 10 km' : '10–15 km'} · ₹{Number(a.village_fee ?? 0)}{a.km_from_town != null && <span className="muted"> · ~{a.km_from_town} km</span>}</span>
+                    : '🏙️ Town'}</td>
                   {hq && <td className="small">{a.franchise_name || <span className="danger-text">none</span>}</td>}
                   <td>{a.pincode || <span className="muted">—</span>}</td>
                   <td>{a.orders}</td>
@@ -83,6 +99,7 @@ export default function Areas() {
         <AreaForm
           area={editing}
           franchises={hq ? franchises.data || [] : null}
+          townCenter={townCenter}
           onClose={() => setEditing(null)}
           onSaved={(a, isNew) => {
             setEditing(null);
@@ -95,10 +112,11 @@ export default function Areas() {
   );
 }
 
-function AreaForm({ area, franchises, onClose, onSaved }) {
+function AreaForm({ area, franchises, townCenter, onClose, onSaved }) {
   const isNew = !area.id;
   const [form, setForm] = useState({
     name: area.name, pincode: area.pincode || '', is_active: area.is_active,
+    is_village: !!area.is_village, village_band: area.village_band ? String(area.village_band) : '',
     franchise_id: String(area.franchise_id ?? getScope() ?? ''),
     lat: area.lat == null ? null : Number(area.lat), lng: area.lng == null ? null : Number(area.lng),
   });
@@ -126,7 +144,9 @@ function AreaForm({ area, franchises, onClose, onSaved }) {
     if (!hasPin) return setError('Tap the map to set where this area is');
     setBusy(true);
     try {
-      const body = { ...form, name: form.name.trim(), pincode: form.pincode.trim(), franchise_id: form.franchise_id || null };
+      if (form.is_village && !form.village_band) throw new Error('Choose how far the village is: up to 10 km, or 10–15 km');
+      const body = { ...form, name: form.name.trim(), pincode: form.pincode.trim(), franchise_id: form.franchise_id || null,
+        village_band: form.is_village ? Number(form.village_band) : null };
       const a = await api(isNew ? '/admin/localities' : `/admin/localities/${area.id}`, { method: isNew ? 'POST' : 'PUT', body });
       onSaved(a, isNew);
     } catch (err) {
@@ -167,6 +187,26 @@ function AreaForm({ area, franchises, onClose, onSaved }) {
             </label>
           )}
         </div>
+        <div className="area-kind" role="radiogroup" aria-label="Type of area">
+          <button type="button" role="radio" aria-checked={!form.is_village} className={!form.is_village ? 'active' : ''} onClick={() => setForm({ ...form, is_village: false })}>🏙️ Town area</button>
+          <button type="button" role="radio" aria-checked={form.is_village} className={form.is_village ? 'active' : ''} onClick={() => setForm({ ...form, is_village: true })}>🏡 Village (within 15 km)</button>
+        </div>
+        {form.is_village && (
+          <div className="village-band">
+            <label>How far from town? *
+              <select value={form.village_band} onChange={(e) => setForm({ ...form, village_band: e.target.value })} required>
+                <option value="">Choose…</option>
+                <option value="1">Up to 10 km</option>
+                <option value="2">10 – 15 km</option>
+              </select>
+            </label>
+            {hasPin && townCenter && (() => {
+              const km = kmBetween(townCenter, form);
+              return <small className={km > 15 ? 'danger-text' : 'muted'}>📏 About {km} km from the middle of town (straight line){km > 15 ? ' — more than 15 km: Village Needs is meant for villages within 15 km.' : km > 10 ? ' — suggests 10–15 km.' : ' — suggests up to 10 km.'}</small>;
+            })()}
+            <small className="muted">Only 🏡 Village Needs delivers to villages (next day, by our own staff). Other shop orders are for town areas.</small>
+          </div>
+        )}
         <div className="area-pin-row">
           <span className={hasPin ? 'success-text' : 'muted'}>{hasPin ? `📍 ${form.lat}, ${form.lng}` : '👆 Tap the map at the centre of this area'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={useMyLocation}>📡 Use my location</button>
@@ -182,5 +222,49 @@ function AreaForm({ area, franchises, onClose, onSaved }) {
         {error && <div className="alert">{error}</div>}
       </form>
     </Modal>
+  );
+}
+
+// 🏡 The two village delivery charges of this franchise (franchise admin). HQ sees each city's charges.
+function VillageFees() {
+  const toast = useToast();
+  const data = useLoad(() => api('/admin/village-fees'));
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const d = data.data;
+  if (!d) return null;
+  const mine = d.franchises.length === 1 ? d.franchises[0] : null;
+  const f = form || (mine ? { near: String(Number(mine.village_fee_near)), far: String(Number(mine.village_fee_far)) } : null);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api('/admin/village-fees', { method: 'PUT', body: { near: Number(f.near), far: Number(f.far) } });
+      toast('Village delivery charges saved');
+      setForm(null);
+      data.reload();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="panel village-fees">
+      <h3>🏡 Village delivery charges</h3>
+      <p className="muted small">Customers in villages pay this for each 🏡 Village Needs order (next-day delivery by our own staff).</p>
+      {d.can_edit && f ? (
+        <form className="form-row" onSubmit={save}>
+          <label>Up to 10 km ₹<input type="number" min="0" max="2000" value={f.near} onChange={(e) => setForm({ ...f, near: e.target.value })} required /></label>
+          <label>10 – 15 km ₹<input type="number" min="0" max="2000" value={f.far} onChange={(e) => setForm({ ...f, far: e.target.value })} required /></label>
+          <button className="btn btn-primary" disabled={busy || !form}>{busy ? 'Saving…' : 'Save'}</button>
+        </form>
+      ) : (
+        <ul className="village-fee-list">
+          {d.franchises.map((x) => <li key={x.id}><b>{x.city}</b>: up to 10 km ₹{Number(x.village_fee_near)} · 10–15 km ₹{Number(x.village_fee_far)}</li>)}
+          {!d.can_edit && <li className="muted small">Set by each city's franchise admin.</li>}
+        </ul>
+      )}
+    </section>
   );
 }

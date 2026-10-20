@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from '../api.js';
 import { ToastProvider } from '../admin/ui.jsx';
 import { StateBadge, usePoll } from '../orderStatus.jsx';
@@ -12,6 +12,7 @@ import { askConfirm } from '../components/ConfirmDialog.jsx';
 // Mobile-first shell for delivery agents: header with online state, bottom tab bar.
 export default function AgentLayout() {
   const { logout } = useAuth();
+  const { pathname } = useLocation();
   const [me, setMe] = useState(null);
   const [error, setError] = useState('');
 
@@ -30,6 +31,10 @@ export default function AgentLayout() {
 
   if (error) return <div className="center-screen"><div className="alert">{error}</div></div>;
   if (!me) return <div className="center-screen"><div className="spinner" /></div>;
+  // 🚗 Share Ride car owners get a Share Ride tab; owners who only do Share Ride start there (no delivery orders)
+  const isCar = (me.agent.skills || []).includes('shared_car_agent');
+  const onlyCar = isCar && me.agent.skills.length === 1;
+  if (onlyCar && pathname === '/agent') return <Navigate to="/agent/share-ride" replace />;
 
   return (
     <ToastProvider>
@@ -61,11 +66,21 @@ export default function AgentLayout() {
           <Outlet context={{ me, reload, location }} />
         </main>
         <nav className="agent-tabs">
-          <NavLink to="/agent" end><span>🏠</span>Home</NavLink>
-          <NavLink to="/agent/orders"><span>📦</span>My orders</NavLink>
-          <NavLink to="/agent/pay-qr"><span>🔳</span>Pay QR</NavLink>
-          <NavLink to="/agent/wallet"><span>💰</span>Wallet</NavLink>
-          <NavLink to="/agent/profile"><span>👤</span>Profile</NavLink>
+          {onlyCar ? (
+            <>
+              <NavLink to="/agent/share-ride"><span>🚗</span>Share Ride</NavLink>
+              <NavLink to="/agent/subscriptions"><span>💳</span>Subscription</NavLink>
+              <NavLink to="/agent/profile"><span>👤</span>Profile</NavLink>
+            </>
+          ) : (
+            <>
+              <NavLink to="/agent" end><span>🏠</span>Home</NavLink>
+              <NavLink to="/agent/orders"><span>📦</span>My orders</NavLink>
+              {isCar ? <NavLink to="/agent/share-ride"><span>🚗</span>Share Ride</NavLink> : <NavLink to="/agent/pay-qr"><span>🔳</span>Pay QR</NavLink>}
+              <NavLink to="/agent/wallet"><span>💰</span>Wallet</NavLink>
+              <NavLink to="/agent/profile"><span>👤</span>Profile</NavLink>
+            </>
+          )}
         </nav>
       </div>
     </ToastProvider>

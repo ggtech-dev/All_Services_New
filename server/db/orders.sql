@@ -113,6 +113,11 @@ BEGIN
     IF NOT FOUND THEN
       RAISE EXCEPTION 'This service is not available right now' USING ERRCODE = '22023';
     END IF;
+    -- shops with their own page (⚡ Instant, 🏡 Village Needs) and 🚗 Share Ride (seat bookings) are never a "visit" booking
+    IF v_svc.is_village OR coalesce(cardinality(v_svc.source_service_ids), 0) > 0 OR v_svc.skill_code = 'shared_car_agent'
+       OR v_svc.allows_list OR EXISTS (SELECT 1 FROM categories c WHERE c.id = v_svc.category_id AND c.slug IN ('daily-workers', 'digital-services')) THEN
+      RAISE EXCEPTION 'Please order this from its own page' USING ERRCODE = '22023';
+    END IF;
     -- franchise (city) of the delivery area: open, and offering this service (franchise.sql)
     PERFORM fn_check_franchise_order((p_contact->>'locality_id')::int, ARRAY[p_service_id], NULL);
     v_sub := v_svc.base_price;
@@ -138,6 +143,14 @@ BEGIN
       UNION
       SELECT (x->>'service_id')::int FROM jsonb_array_elements(p_items) x
        WHERE x->>'product_id' IS NULL AND x->>'service_id' ~ '^\d{1,9}$');
+    -- 🛠️ some shops take only a few items per order (Shop For Me: 3 — small things that fit on a bike)
+    SELECT s.name, s.max_items INTO v_lsvc FROM services s
+     WHERE s.max_items IS NOT NULL
+       AND (SELECT count(*) FROM jsonb_array_elements(p_items) x WHERE x->>'product_id' IS NULL AND x->>'service_id' = s.id::text) > s.max_items
+     LIMIT 1;
+    IF FOUND THEN
+      RAISE EXCEPTION 'You can order up to % items at a time from %. Please place another order for the rest.', v_lsvc.max_items, v_lsvc.name USING ERRCODE = '22023';
+    END IF;
     -- franchise (city) of the delivery area: open, and offering every service / product in this order (franchise.sql)
     PERFORM fn_check_franchise_order((p_contact->>'locality_id')::int, v_services || coalesce(p_via_service_id, NULL::int),
       ARRAY(SELECT (x->>'product_id')::int FROM jsonb_array_elements(p_items) x WHERE x->>'product_id' ~ '^\d{1,9}$'));
@@ -152,10 +165,26 @@ BEGIN
       IF EXISTS (SELECT 1 FROM unnest(v_services) x WHERE NOT (x = ANY (v_via.source_service_ids || v_via.id))) THEN
         RAISE EXCEPTION 'Some items in your cart are not part of % — please order them separately', v_via.name USING ERRCODE = '22023';
       END IF;
-      v_fee := fn_delivery_fee_for(p_customer_id, v_via.delivery_fee);
-      v_slot := format('Now — within %s min', coalesce(v_via.eta_minutes, 15));
+      IF v_via.is_village THEN
+        -- 🏡 Village Needs (village.sql): only to villages we serve; the village's charge; next-day slot
+        v_fee := fn_village_fee((p_contact->>'locality_id')::int);
+        IF v_fee IS NULL THEN
+          RAISE EXCEPTION 'Sorry, Village Needs is not available for this village yet. Please choose your village from the list.' USING ERRCODE = '22023';
+        END IF;
+        IF fn_village_slot_date(p_slot) IS NULL THEN
+          RAISE EXCEPTION 'Please choose a delivery day and time (orders are delivered from tomorrow)' USING ERRCODE = '22023';
+        END IF;
+        v_slot := p_slot;
+      ELSE
+        v_fee := fn_delivery_fee_for(p_customer_id, v_via.delivery_fee);
+        v_slot := format('Now — within %s min', coalesce(v_via.eta_minutes, 15));
+      END IF;
       v_services := v_services || v_via.id;
     ELSE
+    -- Villages get shop items only through 🏡 Village Needs (next day, our own staff).
+    IF EXISTS (SELECT 1 FROM localities WHERE id = (p_contact->>'locality_id')::int AND is_village) THEN
+      RAISE EXCEPTION 'For villages, please order through 🏡 Village Needs (next-day delivery).' USING ERRCODE = '22023';
+    END IF;
     -- One trip: a cart from several shops pays the highest delivery charge among them.
     SELECT coalesce(max(s.delivery_fee), 0) INTO v_base FROM services s WHERE s.id = ANY(v_services);
     v_fee := fn_delivery_fee_for(p_customer_id, v_base);
@@ -194,6 +223,9 @@ BEGIN
           CASE WHEN v_kind = 'products' THEN p_shop_id END,
           CASE WHEN v_kind = 'products' AND p_shop_id IS NULL THEN v_shopname END, v_via.id)
   RETURNING * INTO v;
+  IF v_via.is_village THEN
+    UPDATE orders SET deliver_on = fn_village_slot_date(p_slot) WHERE id = v.id RETURNING * INTO v;
+  END IF;
 
   IF v_kind = 'service' THEN
     INSERT INTO order_items (order_id, service_id, name, unit, price, qty, line_total)
@@ -249,6 +281,11 @@ BEGIN
     END LOOP;
     -- Products from one kind of service go to that type of agent; a mixed cart goes to delivery agents.
     v_skill := CASE WHEN (SELECT count(DISTINCT x) FROM unnest(v_skills) x) = 1 THEN v_skills[1] ELSE 'delivery' END;
+    -- 💧 water cans are delivered by the company's own staff: never in one order with other items
+    -- (🏡 Village Needs orders also go to our staff, through v_via below — they are not water orders)
+    IF v_via.id IS NULL AND 'our_service_employees' = ANY (v_skills) AND v_skill <> 'our_service_employees' THEN
+      RAISE EXCEPTION 'Water cans are delivered by our own team as a separate order. Please order them alone (remove the other items first).' USING ERRCODE = '22023';
+    END IF;
     -- ⚡ Instant orders go only to the instant service's agent type, whatever shops the items come from
     IF v_via.id IS NOT NULL THEN
       v_skill := v_via.skill_code;
@@ -423,9 +460,10 @@ END $$;
 
 CREATE OR REPLACE FUNCTION fn_agent_active_count(p_agent_id INT) RETURNS INT
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
-  -- event, car and home-visit bookings don't block taking other work
+  -- event, car and home-visit bookings, and village orders for a later day, don't block taking other work
   SELECT count(*)::int FROM orders WHERE agent_id = p_agent_id AND status IN ('assigned', 'picked_up')
                                      AND event_details IS NULL AND trip_details IS NULL AND visit_details IS NULL
+                                     AND (deliver_on IS NULL OR deliver_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date)
 $$;
 
 -- Agent picks an open order. Safe when two agents tap "Accept" at the same moment:
@@ -443,7 +481,8 @@ BEGIN
   IF NOT a.is_online THEN
     RAISE EXCEPTION 'Go online to accept orders' USING ERRCODE = '55000';
   END IF;
-  IF (SELECT event_details IS NULL AND trip_details IS NULL AND visit_details IS NULL FROM orders WHERE id = p_order_id)
+  IF (SELECT event_details IS NULL AND trip_details IS NULL AND visit_details IS NULL
+             AND (deliver_on IS NULL OR deliver_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date) FROM orders WHERE id = p_order_id)
      AND fn_agent_active_count(p_agent_id) >= fn_setting_num('agent_max_active_orders', 1) THEN
     RAISE EXCEPTION 'Finish your current order before taking a new one' USING ERRCODE = '55000';
   END IF;
@@ -555,8 +594,12 @@ BEGIN
     IF v.delivery_fee > 0 AND v.fee_paid_at IS NULL THEN
       RAISE EXCEPTION 'First confirm the delivery charge of ₹%: tap "Received on company UPI" or "Paid in cash"', trim_scale(v.delivery_fee) USING ERRCODE = '55000';
     END IF;
-    -- event, car and home-visit bookings: the partner is paid by the customer directly (price agreed on the phone)
-    v_pay := CASE WHEN v.event_details IS NULL AND v.trip_details IS NULL AND v.visit_details IS NULL THEN fn_setting_num('agent_pay_per_order', 25) ELSE 0 END;
+    -- No per-order pay from us for: event, car and home-visit bookings and other "price on discussion" bookings
+    -- (plumber, electrician… — the independent partner is paid by the customer directly), and orders of our own
+    -- staff (water cans: they are company employees).
+    v_pay := CASE WHEN v.event_details IS NULL AND v.trip_details IS NULL AND v.visit_details IS NULL
+                   AND NOT (v.kind = 'service' AND coalesce(v.total, 0) = 0) AND v.skill_code IS DISTINCT FROM 'our_service_employees'
+                  THEN fn_setting_num('agent_pay_per_order', 25) ELSE 0 END;
     UPDATE orders SET status = 'delivered', delivered_at = now(), agent_earning = v_pay WHERE id = v.id RETURNING * INTO v;
     IF v_pay > 0 THEN
       INSERT INTO agent_wallet (agent_id, type, amount, order_id, note)

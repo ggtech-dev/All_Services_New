@@ -20,6 +20,8 @@ const Activity = lazy(() => import('./admin/Activity.jsx'));
 const Areas = lazy(() => import('./admin/Areas.jsx'));
 const Shops = lazy(() => import('./admin/Shops.jsx'));
 const Subscriptions = lazy(() => import('./admin/Subscriptions.jsx'));
+const ShareRideAdmin = lazy(() => import('./admin/ShareRideAdmin.jsx'));
+const WorkersAdmin = lazy(() => import('./admin/WorkersAdmin.jsx'));
 const Ratings = lazy(() => import('./admin/Ratings.jsx'));
 const Complaints = lazy(() => import('./admin/Complaints.jsx'));
 
@@ -46,6 +48,8 @@ const operationsRoutes = (
     <Route path="ratings" element={<Ratings />} />
     <Route path="complaints" element={<Complaints />} />
     <Route path="subscriptions" element={<Subscriptions />} />
+    <Route path="share-ride" element={<ShareRideAdmin />} />
+    <Route path="workers" element={<WorkersAdmin />} />
     <Route path="areas" element={<Areas />} />
     <Route path="shops" element={<Shops />} />
     <Route path="service-types" element={<ServiceTypes />} />

@@ -14,6 +14,7 @@ const AgentWallet = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ d
 const AgentProfile = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ default: m.AgentProfile })));
 const AgentPayQr = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ default: m.AgentPayQr })));
 const AgentSubscriptions = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ default: m.AgentSubscriptions })));
+const ShareRideOwner = lazy(() => import('./agent/ShareRideOwner.jsx'));
 
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
 
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="profile" element={<AgentProfile />} />
           <Route path="pay-qr" element={<AgentPayQr />} />
           <Route path="subscriptions" element={<AgentSubscriptions />} />
+          <Route path="share-ride" element={<ShareRideOwner />} />
         </Route>
         <Route path="*" element={<Navigate to="/agent" replace />} />
       </Routes>

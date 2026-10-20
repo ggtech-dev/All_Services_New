@@ -62,6 +62,10 @@ LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
   v_actor   INT := fn_current_actor();
   v_details JSONB;
+  v_row     JSONB := to_jsonb(CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END);
+  -- what to call the record in the log: its name, a car number (Share Ride cars) or a route (journeys)
+  v_name    TEXT := coalesce(v_row->>'name', v_row->>'reg_number',
+                             CASE WHEN v_row ? 'from_place' THEN (v_row->>'from_place') || ' → ' || (v_row->>'to_place') END);
 BEGIN
   IF v_actor IS NULL THEN
     RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
@@ -69,11 +73,11 @@ BEGIN
 
   IF TG_OP = 'INSERT' THEN
     INSERT INTO admin_audit_log (actor_id, entity, entity_id, action, details)
-    VALUES (v_actor, TG_TABLE_NAME, NEW.id, 'create', jsonb_build_object('name', NEW.name));
+    VALUES (v_actor, TG_TABLE_NAME, NEW.id, 'create', jsonb_build_object('name', v_name));
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
     INSERT INTO admin_audit_log (actor_id, entity, entity_id, action, details)
-    VALUES (v_actor, TG_TABLE_NAME, OLD.id, 'delete', jsonb_build_object('name', OLD.name));
+    VALUES (v_actor, TG_TABLE_NAME, OLD.id, 'delete', jsonb_build_object('name', v_name));
     RETURN OLD;
   END IF;
 
@@ -86,7 +90,7 @@ BEGIN
 
   IF v_details IS NOT NULL THEN
     INSERT INTO admin_audit_log (actor_id, entity, entity_id, action, details)
-    VALUES (v_actor, TG_TABLE_NAME, NEW.id, 'update', v_details || jsonb_build_object('name', NEW.name));
+    VALUES (v_actor, TG_TABLE_NAME, NEW.id, 'update', v_details || jsonb_build_object('name', v_name));
   END IF;
   RETURN NEW;
 END $$;

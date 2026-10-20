@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { query, asActor } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { loadOrder } from './orders.js';
+import { verifiedApplyPhone } from './auth.js';
 import { notifyCustomer, notifyNewOrder } from '../push.js';
 import { clearShopPaymentDetails, discardUploads, orderPhotoUpload, removeOrderFiles, sendOrderFile, uploadedName } from '../orderFiles.js';
 
@@ -20,18 +21,22 @@ mkdirSync(DOC_DIR, { recursive: true });
 
 export const DOC_FIELDS = ['aadhaar_doc', 'pan_doc', 'dl_doc', 'photo_doc'];
 
-export const docUpload = multer({
+const docStorage = (fields) => multer({
   storage: multer.diskStorage({
     destination: DOC_DIR,
     filename: (req, file, cb) =>
       cb(null, `${file.fieldname}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname).toLowerCase()}`),
   }),
-  limits: { fileSize: 5 * 1024 * 1024, files: 4 },
+  limits: { fileSize: 5 * 1024 * 1024, files: fields.length },
   fileFilter: (req, file, cb) => {
     const ok = /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.mimetype);
     cb(ok ? null : Object.assign(new Error('Documents must be JPG, PNG, WEBP or PDF'), { status: 400 }), ok);
   },
-}).fields(DOC_FIELDS.map((name) => ({ name, maxCount: 1 })));
+}).fields(fields.map((name) => ({ name, maxCount: 1 })));
+export const docUpload = docStorage(DOC_FIELDS);
+// 🚗 Share Ride car owners apply with their car's papers too (same fields as routes/shareRide.js CAR_DOCS)
+const APPLY_CAR_DOCS = ['rc_doc', 'permit_doc', 'insurance_doc', 'car_photo'];
+const applyUpload = docStorage([...DOC_FIELDS, ...APPLY_CAR_DOCS]);
 
 export const removeFiles = (files) =>
   Promise.all(Object.values(files || {}).flat().map((f) => unlink(f.path).catch(() => {})));
@@ -41,25 +46,27 @@ export const parseSkills = (v) =>
   (Array.isArray(v) ? v : String(v ?? '').split(',')).map((x) => String(x).trim()).filter(Boolean);
 
 // Creates an agent from a multipart form. status: 'pending' (public application) or 'active' (added by admin).
+// Agents log in with their mobile number + OTP, so the username (a<phone>) and a random password are made here;
+// "Forgot password?" in the agent app sets a real password if they want one.
 export async function createAgent(req, status) {
   const b = req.body || {};
   const doc = (name) => req.files?.[name]?.[0]?.filename ?? null;
   try {
-    if (!/^[a-zA-Z0-9_.]{3,30}$/.test(b.username || '')) {
-      throw Object.assign(new Error('Username must be 3-30 letters, numbers, _ or .'), { status: 400 });
-    }
-    if ((b.password || '').length < 6) {
-      throw Object.assign(new Error('Password must be at least 6 characters'), { status: 400 });
-    }
-    const hash = await bcrypt.hash(b.password, 10);
-    return await asActor(req.user?.id ?? null, async (db) =>
+    const phone = String(b.phone || '').replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
+    if (!/^[6-9]\d{9}$/.test(phone)) throw Object.assign(new Error('Enter a valid 10-digit mobile number'), { status: 400 });
+    let username = `a${phone}`;
+    for (let i = 2; (await query('SELECT 1 FROM users WHERE username = $1', [username])).rowCount; i++) username = `a${phone}_${i}`;
+    const hash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+    const agent = await asActor(req.user?.id ?? null, async (db) =>
       (await db.query('SELECT * FROM fn_create_agent($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)', [
-        b.username, hash, b.full_name, b.phone, b.email, b.vehicle_type || 'bike', b.vehicle_number,
+        username, hash, b.full_name, phone, null, b.vehicle_type || 'bike', b.vehicle_number,
         b.aadhaar_number, b.pan_number, b.dl_number, b.locality_id ? Number(b.locality_id) : null,
         doc('aadhaar_doc'), doc('pan_doc'), doc('dl_doc'), doc('photo_doc'), status, req.user?.id ?? null,
         parseSkills(b.skills),
       ])).rows[0]
     );
+    await query('UPDATE users SET has_password = false WHERE id = $1', [agent.user_id]);
+    return agent;
   } catch (err) {
     await removeFiles(req.files); // don't keep documents of a failed application
     if (err.code === '23505') {
@@ -83,10 +90,51 @@ export async function franchiseForNewAgent(req, scope) {
 
 // Public: anyone can apply to become a delivery agent. An admin must approve before they can log in.
 export const applyRouter = Router();
-applyRouter.post('/apply', docUpload, h(async (req, res) => {
+applyRouter.post('/apply', applyUpload, h(async (req, res) => {
+  // the mobile number was checked by OTP on the form (that number is also the agent's login)
+  const phone = verifiedApplyPhone(req.body?.phone_proof);
+  if (!phone) {
+    await removeFiles(req.files);
+    return res.status(400).json({ error: 'Please verify your mobile number with OTP first (step 1). It may have expired — verify again.' });
+  }
+  req.body.phone = phone;
+  // 🚗 Share Ride car owner: only that type of work, and the car (with its papers) is checked before the account exists
+  const carOwner = req.body.owner_type === 'car';
+  if (carOwner) {
+    const b = req.body;
+    const file = (k) => req.files?.[k]?.[0];
+    const reg = String(b.reg_number || '').toUpperCase().replace(/[\s-]/g, '');
+    const problem = !/^\d{1,9}$/.test(String(b.car_model_id || '')) ? 'Choose your car model'
+      : !/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$/.test(reg) ? 'Enter the car number like TS36T1234'
+      : b.yellow_board !== 'true' ? 'Only commercial (yellow number plate) cars with a valid permit can carry paying passengers'
+      : !file('rc_doc') || !file('permit_doc') || !file('insurance_doc') ? 'Upload the RC, permit and insurance of the car'
+      : (await query("SELECT 1 FROM shared_cars WHERE upper(reg_number) = $1 AND status IN ('pending', 'approved')", [reg])).rowCount
+        ? 'This car number is already registered' : null;
+    if (problem) {
+      await removeFiles(req.files);
+      return res.status(400).json({ error: problem });
+    }
+    req.body.skills = ['shared_car_agent'];
+    req.body.vehicle_type = 'car';
+    req.body.vehicle_number = reg;
+  }
   const onlyFranchise = await franchiseForNewAgent(req, null);
   const agent = await createAgent(req, 'pending');
   if (onlyFranchise && agent.franchise_id == null) await query('UPDATE agents SET franchise_id = $2 WHERE user_id = $1', [agent.user_id, onlyFranchise]);
+  await query('UPDATE users SET phone_verified_at = now() WHERE id = $1', [agent.user_id]);
+  if (carOwner) {
+    const doc = (k) => req.files?.[k]?.[0]?.filename ?? null;
+    try {
+      await asActor(agent.user_id, (db) => db.query('SELECT fn_add_car($1,$2,$3,$4,$5,$6,$7,$8,$9)', [
+        agent.user_id, Number(req.body.car_model_id), req.body.reg_number, req.body.car_color || '', true,
+        doc('rc_doc'), doc('permit_doc'), doc('insurance_doc'), doc('car_photo'),
+      ]));
+    } catch (err) {
+      await query('DELETE FROM users WHERE id = $1', [agent.user_id]); // no half-made application
+      await removeFiles(req.files);
+      throw err;
+    }
+  }
   // picked a type of work with subscription services → requests go to the admin
   await query('CALL sp_subscription_requests_from_skills($1)', [agent.user_id]);
   res.status(201).json({ ok: true, status: agent.status });
@@ -138,8 +186,8 @@ router.get('/available', h(async (req, res) => {
     `SELECT o.id, o.kind, o.total, o.delivery_fee, o.slot, o.created_at, l.name AS locality_name, o.pincode, o.event_details, o.trip_details, o.visit_details, o.notes,
             EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND i.on_bill) AS on_bill,
             (SELECT coalesce(sh.name, o.preferred_shop_name) FROM (SELECT 1) x LEFT JOIN shops sh ON sh.id = o.preferred_shop_id) AS preferred_shop,
-            (o.list_photo IS NOT NULL) AS has_list_photo, (o.via_service_id IS NOT NULL) AS instant,
-            st.name AS skill_name, st.icon AS skill_icon,
+            (o.list_photo IS NOT NULL) AS has_list_photo, (o.via_service_id IS NOT NULL AND o.deliver_on IS NULL) AS instant, o.deliver_on,
+            st.code AS skill_code, st.name AS skill_name, st.icon AS skill_icon,
             (SELECT count(*) FROM order_items i WHERE i.order_id = o.id)::int AS item_count,
             (SELECT string_agg(fn_item_label(i.name, i.qty, i.sell_by, i.unit), ', ' ORDER BY i.id)
                FROM order_items i WHERE i.order_id = o.id) AS summary,

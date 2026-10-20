@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, priceTalk } from '../api.js';
+import PartnerNote from '../components/PartnerNote.jsx';
 import { useAuth } from '../auth.jsx';
 import { itemNote, useCart } from '../cart.jsx';
 import { qtyLabel, slotLabel } from '../qty.js';
@@ -35,6 +36,7 @@ export default function Checkout() {
   const serviceSlug = params.get('service');
   const kind = serviceSlug ? 'service' : 'products';
   const instant = kind === 'products' ? cart.via : null; // ⚡ Instant Delivery order: no time slots, instant agents
+  const village = !!instant?.village; // 🏡 Village Needs: villages only, the village's charge, next-day slots
 
   const [service, setService] = useState(null);
   const [localities, setLocalities] = useState([]);
@@ -63,6 +65,8 @@ export default function Checkout() {
   const isAmbulance = isVisit && /ambulance/i.test(service?.name || '');
   const [visit, setVisit] = useState({ mode: '', visit_date: '', visit_time: '10:00' });
   const ahead = isEvent || isTrip || isVisit; // booked ahead: no time slots, no price — the partner calls to agree it
+  // no price from us (booked ahead, or a "price on discussion" service like plumber / electrician)
+  const talk = ahead || (kind === 'service' && priceTalk(service));
   const [tripOpts, setTripOpts] = useState(null);
   const [trip, setTrip] = useState({ trip_type: '', drop: '', trip_date: '', trip_time: '09:00', return_date: '', passengers: '', car_type: 'Any car', details: '' });
   useEffect(() => {
@@ -129,9 +133,10 @@ export default function Checkout() {
   const productIds = cart.items.map((i) => i.product_id).join(',');
   useEffect(() => {
     const parts = [productIds && `products=${productIds}`, listServiceIds && `lists=${listServiceIds}`].filter(Boolean).join('&');
-    const q = kind === 'service' ? (service ? `service=${service.id}` : null) : instant ? `via=${instant.id}` : parts || null;
+    const q = kind === 'service' ? (service ? `service=${service.id}` : null)
+      : instant ? `via=${instant.id}${village && form.locality_id ? `&locality=${form.locality_id}` : ''}` : parts || null;
     if (q) api(`/orders/quote?${q}`).then(setQuote).catch(() => {});
-  }, [kind, service, productIds, listServiceIds, instant]);
+  }, [kind, service, productIds, listServiceIds, instant, village, form.locality_id]);
 
   // Shops the customer may choose (for items bought at a shop: vegetables, meat, kirana…)
   const shopServiceIds = [...new Set([...cart.items.filter((i) => i.on_bill && i.service_id).map((i) => i.service_id), ...(listServiceIds ? listServiceIds.split(',').map(Number) : [])])].join(',');
@@ -175,7 +180,7 @@ export default function Checkout() {
   const hasBill = lines.some((l) => l.on_bill);
   const fee = quote.delivery_fee;
   const toPay = !hasBill ? rupees(subtotal + fee) : subtotal + fee > 0 ? `${rupees(subtotal + fee)} + shop bill` : 'As per shop bill';
-  const feeName = kind === 'service' ? 'Visit charge' : 'Delivery charge';
+  const feeName = kind === 'service' ? 'Visit charge' : village ? 'Village delivery charge' : 'Delivery charge';
 
   if (kind === 'products' && !cart.items.length && !ownLines.length && !cart.photo) {
     return (
@@ -231,9 +236,10 @@ export default function Checkout() {
     <form className="checkout" onSubmit={place}>
       <div className="checkout-main">
         {isVisit && service.parent_slug && <Link to={`/care/${service.parent_slug}`} className="back-link">← {service.parent_name}</Link>}
-        <h1>{kind === 'service' ? 'Book service' : instant ? `⚡ ${instant.name}` : 'Checkout'}</h1>
+        <h1>{kind === 'service' ? 'Book service' : instant ? `${village ? '🏡' : '⚡'} ${instant.name}` : 'Checkout'}</h1>
         {rebookOf && <div className="instant-banner rebook-banner">✏️ <span>{`Booking again — change anything you like. Your earlier booking #${rebookOf} is cancelled when you confirm.`}</span></div>}
-        {instant && <div className="instant-banner">⚡ <b>Instant order</b> — your delivery partner starts right away and reaches you in about <b>{quote.eta_minutes || 15} minutes</b>.</div>}
+        {instant && !village && <div className="instant-banner">⚡ <b>Instant order</b> — your delivery partner starts right away and reaches you in about <b>{quote.eta_minutes || 15} minutes</b>.</div>}
+        {village && <div className="instant-banner village-banner">🏡 <span><b>Village delivery</b> — same-day delivery is not possible for villages. Choose <b>tomorrow</b> (or a later day) and a time below. Our own team brings it.</span></div>}
 
         <section className="panel form">
           <h3>{isEvent ? '📍 Event venue' : isTrip || isAmbulance ? '🟢 Pickup address' : isVisit ? '📍 Patient address' : '📍 Delivery address'}</h3>
@@ -246,8 +252,10 @@ export default function Checkout() {
             <label>
               Area
               <select value={form.locality_id} onChange={chooseLocality} required>
-                <option value="">Choose your area…</option>
-                {localities.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                <option value="">{village ? 'Choose your village…' : 'Choose your area…'}</option>
+                {/* villages: only for 🏡 Village Needs (with their charge); shop orders go to town areas */}
+                {localities.filter((l) => (village ? l.is_village : kind === 'service' || !l.is_village))
+                  .map((l) => <option key={l.id} value={l.id}>{l.name}{village ? ` — delivery ${rupees(l.village_fee)}` : ''}</option>)}
               </select>
             </label>
             <label>Pincode<input value={form.pincode} onChange={set('pincode')} inputMode="numeric" maxLength={6} placeholder="500072" /></label>
@@ -340,12 +348,12 @@ export default function Checkout() {
         )}
 
         {!ahead && <section className="panel form">
-          <h3>{kind === 'service' ? '🗓️ Preferred time' : instant ? '📝 Instructions' : '🕒 Delivery time'}</h3>
+          <h3>{kind === 'service' ? '🗓️ Preferred time' : village ? '📅 Delivery day & time' : instant ? '📝 Instructions' : '🕒 Delivery time'}</h3>
           {quote.window_conflict && (
             <div className="alert">Some items in your cart are delivered at different times of the day. Please order them separately.</div>
           )}
           {quote.window && <p className="muted small">🕕 These items are delivered between <b>{quote.window.label}</b>.</p>}
-          {!instant && <div className="slot-grid">
+          {(!instant || village) && <div className="slot-grid">
             {(windowSlots || SLOTS[kind]).map((s) => (
               <button type="button" key={s} className={`slot ${slot === s ? 'active' : ''}`} onClick={() => setSlot(s)}>{windowSlots ? slotLabel(s) : s}</button>
             ))}
@@ -407,17 +415,18 @@ export default function Checkout() {
                   <button type="button" onClick={() => cart.more(l.product_id)} aria-label={`More ${l.name}`}>+</button>
                 </div>
               ) : null}
-              <span className="summary-price">{ahead ? null : l.on_bill ? <small className="market-price">as per bill</small> : rupees(l.price * l.qty)}</span>
+              <span className="summary-price">{talk ? null : l.on_bill ? <small className="market-price">as per bill</small> : rupees(l.price * l.qty)}</span>
             </li>
           ))}
         </ul>
-        {ahead ? (
+        {talk ? (
           <div className="totals">
             {isEvent && event.event_date && <div><span>📅 When</span><span>{event.event_date} · {event.event_time}</span></div>}
             {isTrip && trip.trip_date && <div><span>📅 When</span><span>{trip.trip_date} · {trip.trip_time}</span></div>}
             {isVisit && visit.mode === 'now' && <div><span>⚡ When</span><span>Now</span></div>}
             {isVisit && visit.mode === 'schedule' && visit.visit_date && <div><span>📅 When</span><span>{visit.visit_date} · {visit.visit_time}</span></div>}
             <div className="grand"><span>Price</span><span>agreed with the partner</span></div>
+            <PartnerNote compact />
           </div>
         ) : <div className="totals">
           {(subtotal > 0 || !hasBill) && <div><span>{kind === 'service' ? 'Service charge' : 'Items total'}</span><span>{rupees(subtotal)}</span></div>}
@@ -434,10 +443,10 @@ export default function Checkout() {
           <div className="grand"><span>To pay</span><span>{toPay}</span></div>
         </div>}
         {error && <div className="alert">{error}</div>}
-        <button className="btn btn-primary btn-block" disabled={busy || !lines.length || quote.window_conflict || (windowSlots && !windowSlots.length) || (isVisit && !visit.mode)}>
-          {busy ? 'Placing…' : isEvent ? '🎉 Book event' : isTrip ? '🚗 Book car' : isAmbulance ? '🚑 Book ambulance' : isVisit ? '🩺 Book visit' : kind === 'service' ? `Confirm booking · ${toPay}` : instant ? '⚡ Place instant order' : hasBill ? 'Place order' : `Place order · ${toPay}`}
+        <button className="btn btn-primary btn-block" disabled={busy || !lines.length || (village && !quote.village_ok) || quote.window_conflict || (windowSlots && !windowSlots.length) || (isVisit && !visit.mode)}>
+          {busy ? 'Placing…' : isEvent ? '🎉 Book event' : isTrip ? '🚗 Book car' : isAmbulance ? '🚑 Book ambulance' : isVisit ? '🩺 Book visit' : kind === 'service' ? (talk ? '📞 Book now' : `Confirm booking · ${toPay}`) : instant ? (village ? '🏡 Place village order' : '⚡ Place instant order') : hasBill ? 'Place order' : `Place order · ${toPay}`}
         </button>
-        {!ahead && <p className="muted small center">{hasBill ? 'Market-price items are charged exactly as per the shop bill.' : 'Prices are checked again when you place the order.'}</p>}
+        {!talk && <p className="muted small center">{hasBill ? 'Market-price items are charged exactly as per the shop bill.' : 'Prices are checked again when you place the order.'}</p>}
       </aside>
     </form>
   );

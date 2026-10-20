@@ -6,6 +6,17 @@ import { StateBadge, StatusBadge, VEHICLES, rupees, usePoll, when } from '../ord
 import { AGENT_DOCS, AgentForm, SkillPicker } from '../pages/AgentApply.jsx';
 import MapView, { secondsAgo } from '../components/MapView.jsx';
 import { Stars } from '../components/RateOrder.jsx';
+import { useAskReason } from '../components/AskReason.jsx';
+import { askConfirm } from '../components/ConfirmDialog.jsx';
+
+// The agent application page lives in the partner app: admin.<domain> / hq.<domain> → partner.<domain>
+// (on a computer: the admin dev / build ports → the agent app's port).
+function partnerOrigin() {
+  const { protocol, hostname, port } = window.location;
+  if (/^(admin|hq)\./.test(hostname)) return `${protocol}//partner.${hostname.replace(/^(admin|hq)\./, '')}`;
+  const agentPort = { 5175: '5174', 5176: '5174', 5002: '5001', 5003: '5001' }[port] || port;
+  return `${protocol}//${hostname}${agentPort ? `:${agentPort}` : ''}`;
+}
 
 const TABS = [
   ['', 'All agents'],
@@ -15,6 +26,7 @@ const TABS = [
   ['pending', '📝 Applications'],
   ['suspended', 'Suspended'],
   ['rejected', 'Rejected'],
+  ['removed', 'Removed'],
 ];
 
 export default function Agents() {
@@ -34,11 +46,13 @@ export default function Agents() {
   const typeOf = (code) => types.data?.find((t) => t.code === code);
 
   const inSkill = (a) => !skill || a.skills.includes(skill);
-  const count = (state) => (all.data || []).filter((a) => inSkill(a) && (!state || a.state === state)).length;
+  // "All agents" leaves out removed ones (they have their own tab)
+  const inTab = (a, state) => (state ? a.state === state : a.state !== 'removed');
+  const count = (state) => (all.data || []).filter((a) => inSkill(a) && inTab(a, state)).length;
   const rows = (all.data || []).filter(
-    (a) => inSkill(a) && (!tab || a.state === tab) && (!q || `${a.full_name} ${a.phone} ${a.username} ${a.locality_name || ''}`.toLowerCase().includes(q.toLowerCase()))
+    (a) => inSkill(a) && inTab(a, tab) && (!q || `${a.full_name} ${a.phone} ${a.username} ${a.locality_name || ''}`.toLowerCase().includes(q.toLowerCase()))
   );
-  const applyLink = `${window.location.origin}/agent/apply`;
+  const applyLink = `${partnerOrigin()}/agent/apply`;
 
   return (
     <div className="stack">
@@ -208,6 +222,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
   const [skills, setSkills] = useState(null);
   const [busy, setBusy] = useState(false);
   const [wallet, setWallet] = useState({ type: 'payout', amount: '', note: '' });
+  const [askReason, reasonBox] = useAskReason();
 
   const saved = useRef(null); // the agent's types of work as last loaded from the server
   const load = useCallback(
@@ -251,7 +266,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
           <div className="agent-avatar">{a.full_name[0]}</div>
           <div className="ad-who">
             <StateBadge state={a.state} />
-            <div className="muted small">@{a.username} · joined {when(a.joined_at)}</div>
+            <div className="muted small">📱 {a.phone} · joined {when(a.joined_at)}</div>
           </div>
           <div className="ad-actions">
             {a.status === 'pending' && (
@@ -261,8 +276,8 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                   ✅ Approve
                 </button>
                 <button className="btn btn-ghost btn-sm danger-text" disabled={busy}
-                  onClick={() => {
-                    const reason = prompt('Reason for rejecting (the applicant sees this when they try to log in):');
+                  onClick={async () => {
+                    const reason = await askReason({ title: `Reject ${a.full_name}?`, text: 'The applicant sees this reason when they try to log in.', required: true, okText: 'Reject application' });
                     if (reason) act(() => api(`/admin/agents/${a.user_id}/review`, { method: 'POST', body: { approve: false, reason } }), 'Application rejected');
                   }}>
                   Reject
@@ -271,7 +286,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
             )}
             {a.status === 'active' && (
               <button className="btn btn-ghost btn-sm danger-text" disabled={busy}
-                onClick={() => confirm(`Suspend ${a.full_name}? They will be logged out of orders until you re-activate them.`) &&
+                onClick={async () => (await askConfirm(`Suspend ${a.full_name}? They will be logged out of orders until you re-activate them.`, { okText: 'Yes, suspend', cancelText: 'No' })) &&
                   act(() => api(`/admin/agents/${a.user_id}/status`, { method: 'PATCH', body: { status: 'suspended' } }), 'Agent suspended')}>
                 Suspend
               </button>
@@ -282,9 +297,31 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                 Re-activate
               </button>
             )}
+            {a.status !== 'removed' && a.status !== 'pending' && (
+              <button className="btn btn-ghost btn-sm danger-text" disabled={busy}
+                onClick={async () => {
+                  const reason = await askReason({
+                    title: `Remove ${a.full_name}?`,
+                    text: 'They can no longer log in or get orders. Old orders, wallet and ratings are kept. You can restore them later.',
+                    required: true, okText: 'Remove agent', placeholder: 'e.g. Not working with us any more',
+                  });
+                  if (reason) act(() => api(`/admin/agents/${a.user_id}/remove`, { method: 'POST', body: { reason } }), `${a.full_name} removed`);
+                }}>
+                🗑️ Remove
+              </button>
+            )}
+            {a.status === 'removed' && (
+              <button className="btn btn-primary btn-sm" disabled={busy}
+                onClick={async () => (await askConfirm(`Bring ${a.full_name} back as an active agent?`, { okText: 'Yes, restore', cancelText: 'No' })) &&
+                  act(() => api(`/admin/agents/${a.user_id}/status`, { method: 'PATCH', body: { status: 'active' } }), `${a.full_name} restored`)}>
+                Restore
+              </button>
+            )}
           </div>
         </div>
         {a.status === 'rejected' && <div className="alert">Rejected: {a.rejection_reason}</div>}
+        {a.status === 'removed' && <div className="alert">Removed{a.removed_at ? ` on ${when(a.removed_at)}` : ''}: {a.removed_reason}</div>}
+        {reasonBox}
 
         <section className="skills-edit">
           <h4>Types of work <span className="muted small">— this agent only sees and gets these orders</span></h4>

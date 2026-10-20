@@ -19,6 +19,8 @@ import VisitInfo from '../components/VisitInfo.jsx';
 
 // Event, car and home-visit bookings: no pay per order, price agreed on the phone, cancel needs a reason.
 const ahead = (o) => !!(o.event_details || o.trip_details || o.visit_details);
+// "Price on discussion" bookings (plumber, electrician, cleaning…): the partner agrees the price with the customer.
+const talk = (o) => ahead(o) || (o.kind === 'service' && !(Number(o.total) > 0));
 
 const nearest = (list, lat, lng) =>
   list.reduce((best, l) => {
@@ -157,8 +159,9 @@ export default function AgentHome() {
                   <small className="muted">#{o.id} · {o.kind === 'service' ? 'Service visit' : `${o.item_count} item${o.item_count > 1 ? 's' : ''}`} · {time(o.created_at)}</small>
                   <span className="skill-chip small">{o.skill_icon} {o.skill_name}</span>
                   {o.instant && <span className="instant-chip">⏱️ Deliver {(o.slot || "within 15 min").replace(/^Now — /, "")}</span>}
+                  {o.deliver_on && <span className="instant-chip village-chip">🏡 Village · deliver {o.slot}</span>}
                 </div>
-                {!ahead(o) && <span className="earn">+{rupees(s.pay_per_order)}</span>}
+                {!talk(o) && o.skill_code !== 'our_service_employees' && <span className="earn">+{rupees(s.pay_per_order)}</span>}
               </div>
               {o.event_details ? <EventInfo event={o.event_details} notes={o.notes} compact />
                 : o.trip_details ? <TripInfo trip={o.trip_details} notes={o.notes} pickup={o.locality_name} compact />
@@ -171,7 +174,7 @@ export default function AgentHome() {
                 </p>
               )}
               <div className="avail-foot">
-                {ahead(o)
+                {talk(o)
                   ? <small className="muted">💬 Call the customer after accepting to agree the price</small>
                   : <small className="muted">{o.slot || 'ASAP'} · Collect {o.on_bill ? (Number(o.total) > 0 ? `shop bill + ${rupees(o.total)}` : 'as per shop bill') : rupees(o.total)}</small>}
                 <button

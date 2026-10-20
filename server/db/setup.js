@@ -56,6 +56,10 @@ try {
   await client.query(await sql('./events.sql')); // 🎉 Events bookings (date, time, venue) for event partners
   await client.query(await sql('./vehicle.sql')); // 🚗 Vehicle Rental: car bookings (pickup, drop, date, time) for car partners
   await client.query(await sql('./health.sql')); // 💊 Home Doctor Visit types (parent services), visit time: now or a date
+  await client.query(await sql('./village.sql')); // 🏡 Village Needs: villages, next-day slots, village delivery charge
+  await client.query(await sql('./share_ride.sql'));
+  await client.query(await sql('./more_services.sql')); // 👷 Daily Workers directory, 💡 Digital Services requests (HQ only) // 🚗 Share Ride: cars, seat layouts, journeys, seat bookings
+  await client.query(await sql('./login.sql')); // 📱 phone-first login, agents removed by the franchise admin — after orders.sql
 
   await client.query('BEGIN');
 
@@ -307,6 +311,113 @@ try {
     );
     await client.query("INSERT INTO site_settings (key, value) VALUES ('seeded_events', current_date::text)");
     console.log('🎉 Events added; Waste & Recycling and Local Logistics removed.');
+  }
+
+  // One time (2026-10-17) — services cleanup, part 1:
+  //  💧 Drinking water: its own card at the top of the home page, one 20L can ₹25 with delivery included, delivered
+  //     only by the company's own staff (type our_service_employees). Other water products switched off (not deleted).
+  //  🏠 Everyday Home Services: no prices — we only pass the booking to an independent partner; the customer and
+  //     the partner agree the price on the phone. Guarded: later admin edits are kept.
+  const homeClean = await client.query("SELECT 1 FROM site_settings WHERE key = 'cleanup_home_services_v1'");
+  if (!homeClean.rowCount) {
+    const water = 'home-services-drinking-water-delivery-20l-cans-bottles';
+    await client.query(
+      `UPDATE services SET name = 'Drinking Water Can (20L)', home_card = true, skill_code = 'our_service_employees',
+              base_price = 25, price_unit = 'per can', delivery_fee = 0,
+              description = '20 litre drinking water can at your door — ₹25 per can, delivery included. Delivered by our own team.'
+        WHERE slug = $1`, [water]);
+    await client.query(`UPDATE products SET name = '20L Drinking Water Can', brand = NULL, unit = '20 L', price = 25, mrp = NULL, is_active = true
+                          WHERE slug = $1`, [`${water}-water-can-refill`]);
+    await client.query(`UPDATE products p SET is_active = false FROM services s
+                          WHERE s.id = p.service_id AND s.slug = $1 AND p.slug <> $2`, [water, `${water}-water-can-refill`]);
+    await client.query(
+      `UPDATE services s SET base_price = 0, price_unit = 'price on discussion', delivery_fee = 0
+         FROM categories c WHERE c.id = s.category_id AND c.slug = 'home-services' AND s.slug <> $1`, [water]);
+    await client.query(`UPDATE categories SET description = 'Plumbers, electricians, cleaning, repairs and laundry — book, then talk to the partner directly.'
+                          WHERE slug = 'home-services'`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('cleanup_home_services_v1', current_date::text)");
+    console.log('🧹 Services cleanup 1: 💧 water card ₹25 (our staff); 🏠 home services without prices.');
+  }
+
+  // One time (2026-10-17) — services cleanup, part 2: "Empty Water-Can Pickup" removed (switched off, not deleted:
+  // old orders keep it).
+  const homeClean2 = await client.query("SELECT 1 FROM site_settings WHERE key = 'cleanup_home_services_v2'");
+  if (!homeClean2.rowCount) {
+    await client.query("UPDATE services SET is_active = false WHERE slug = 'home-services-empty-water-can-pickup'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('cleanup_home_services_v2', current_date::text)");
+    console.log('🧹 Services cleanup 2: Empty Water-Can Pickup removed.');
+  }
+
+  // One time (2026-10-17) — services cleanup, part 3: "Water-Tank Cleaning" becomes "Water Tanker Supply" (a tanker
+  // of water when the borewell / tap supply is not working). Same service, so old orders keep their history.
+  const homeClean3 = await client.query("SELECT 1 FROM site_settings WHERE key = 'cleanup_home_services_v3'");
+  if (!homeClean3.rowCount) {
+    await client.query(
+      `UPDATE services SET name = 'Water Tanker Supply', price_unit = 'price on discussion', eta_minutes = 120,
+              description = 'Borewell not working or no tap water? Book a water tanker — the tanker owner calls you to fix the quantity, time and price.'
+        WHERE slug = 'home-services-water-tank-cleaning'`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('cleanup_home_services_v3', current_date::text)");
+    console.log('🧹 Services cleanup 3: Water-Tank Cleaning → Water Tanker Supply.');
+  }
+
+  // One time (2026-10-19): 🏡 Village Needs — shows Kirana, Fresh Vegetables and Daily Fresh Meat & Fish live (no copies)
+  // plus an "Other things" list/photo tab; next-day delivery to villages only; our own staff; price as per shop bill.
+  // 🚗 Share Ride — car owners need a subscription (HQ default ₹0 / 30 days; each franchise sets its own).
+  const newCats = await client.query("SELECT 1 FROM site_settings WHERE key = 'seeded_village_share_ride'");
+  if (!newCats.rowCount) {
+    await client.query(
+      `UPDATE services SET skill_code = 'our_service_employees', is_village = true, price_on_bill = true, allows_list = true,
+              eta_minutes = 1440, price_unit = 'next-day delivery', delivery_fee = 0,
+              source_service_ids = ARRAY(SELECT id FROM services WHERE slug IN ('food-daily-kirana-delivery', 'food-daily-fresh-vegetables', 'food-daily-daily-fresh-meat-fish')
+                                          ORDER BY array_position(ARRAY['food-daily-kirana-delivery', 'food-daily-fresh-vegetables', 'food-daily-daily-fresh-meat-fish'], slug::text)),
+              description = 'Kirana, vegetables, fresh meat — or write / photo anything else you need (bike parts, medicines…). Delivered to your village next day by our own team. Pay as per the shop bill.'
+        WHERE slug = 'village-needs-village-needs'`);
+    await client.query(
+      `UPDATE services SET skill_code = 'shared_car_agent', subscription_required = true, subscription_fee = 0, subscription_days = 30,
+              description = 'Seats in commercial cars going between towns. Pick your seat, pay the car owner, get your ticket.'
+        WHERE slug = 'share-ride-share-ride'`);
+    await client.query(
+      `INSERT INTO franchise_services (franchise_id, service_id)
+       SELECT f.id, s.id FROM franchises f CROSS JOIN services s WHERE s.slug IN ('village-needs-village-needs', 'share-ride-share-ride')
+       ON CONFLICT DO NOTHING`);
+    await client.query("UPDATE categories SET sort_order = 1 WHERE slug = 'village-needs'");
+    await client.query("UPDATE categories SET sort_order = 7 WHERE slug = 'share-ride'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('seeded_village_share_ride', current_date::text)");
+    console.log('🏡 Village Needs and 🚗 Share Ride added.');
+  }
+
+  // One time (2026-10-20): 🛠️ Shop For Me (8 write-your-list shops: up to 3 items, ₹50 delivery, regular agents, bills
+  // above ₹1,000 paid by the customer to the shop), 👷 Daily Workers and 💡 Digital Services (pages of their own).
+  const moreDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'seeded_shop_for_me_v1'");
+  if (!moreDone.rowCount) {
+    const shopFor = {
+      'Plumbing & Sanitary Items': 'Taps, small pipes, fittings, washers, Teflon tape…',
+      'Electrical Items': 'Bulbs, switches, wires, holders, extension boards…',
+      'Hardware, Tools & Paint': 'Screws, nails, small tools, paint, brushes, putty…',
+      'Mobile & Computer Accessories': 'Chargers, cables, earphones, mouse, pen drive…',
+      'Household Utility Items': 'Buckets, locks, torch, cells / batteries, mops…',
+      'Garden & Plant Supplies': 'Seeds, pots, small sprayers, fertilizer packets…',
+      'Stationery & Small Items': 'Books, pens, photocopies, gift items…',
+      'Anything Else (small items)': 'Anything small from a town shop — write it or send a photo.',
+    };
+    for (const [name, what] of Object.entries(shopFor)) {
+      await client.query(
+        `UPDATE services SET skill_code = 'delivery', allows_list = true, price_on_bill = true, delivery_fee = 50, max_items = 3,
+                bill_cash_limit = 1000, price_unit = 'as per shop bill', eta_minutes = 120,
+                description = $2 || ' Up to 3 items per order, small things that fit on a bike. You pay as per the shop bill + ₹50 delivery.'
+          WHERE slug = $1`, [`shop-for-me-${slugify(name)}`, what]);
+    }
+    await client.query(
+      `INSERT INTO franchise_services (franchise_id, service_id)
+       SELECT f.id, s.id FROM franchises f CROSS JOIN services s JOIN categories c ON c.id = s.category_id
+        WHERE c.slug IN ('shop-for-me', 'daily-workers', 'digital-services')
+       ON CONFLICT DO NOTHING`);
+    await client.query("UPDATE categories SET sort_order = 1 WHERE slug = 'shop-for-me'");
+    await client.query("UPDATE categories SET sort_order = 2 WHERE slug = 'village-needs'");
+    await client.query("UPDATE categories SET sort_order = 3 WHERE slug = 'daily-workers'");
+    await client.query("UPDATE categories SET sort_order = 9 WHERE slug = 'digital-services'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('seeded_shop_for_me_v1', current_date::text)");
+    console.log('🛠️ Shop For Me, 👷 Daily Workers and 💡 Digital Services added.');
   }
 
   // One time: 🚗 Vehicle Rental (car bookings) in every franchise. Car bookings go only to car partners with an

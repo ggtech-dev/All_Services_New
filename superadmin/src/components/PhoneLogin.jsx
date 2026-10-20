@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-// 📱 Customer login with a mobile number. Our server makes the 6-digit OTP and an SMS company (2Factor) delivers it.
-// Steps: number → OTP → (new number: name). login(path, body) logs in, or returns { needName, proof } for a new number.
-export default function PhoneLogin({ login, submitLabel = 'Login' }) {
+// 📱 Login with a mobile number. Our server makes the 6-digit OTP and an SMS company (2Factor) delivers it.
+// Steps: number → OTP → (new customer number: name). login(path, body) logs in, or returns { needName, proof }.
+// portal: 'user' (customers) · 'agent' (approved agents) · 'agent_apply' (checks the number on the agent application)
+const HINTS = {
+  user: "We'll send a 6-digit OTP by SMS. New here? Your account is created automatically.",
+  agent: "Use the mobile number you applied with. We'll send a 6-digit OTP by SMS.",
+  agent_apply: "We'll send a 6-digit OTP to check it's your number. This number will be your login for the agent app.",
+};
+
+export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'user' }) {
   const [step, setStep] = useState('phone'); // 'phone' | 'code' | 'name'
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -48,7 +55,7 @@ export default function PhoneLogin({ login, submitLabel = 'Login' }) {
     if (!/^\d{6}$/.test(code)) return setError('Enter the 6-digit OTP from the SMS');
     setBusy(true);
     try {
-      const d = await login('/auth/phone/verify', { phone, code });
+      const d = await login('/auth/phone/verify', { phone, code, portal });
       if (d?.needName) {
         setProof(d.proof);
         setStep('name');
@@ -88,7 +95,7 @@ export default function PhoneLogin({ login, submitLabel = 'Login' }) {
               />
             </div>
           </label>
-          <p className="muted small">We'll send a 6-digit OTP by SMS. New here? Your account is created automatically.</p>
+          <p className="muted small">{HINTS[portal] || HINTS.user}</p>
           {error && <div className="alert">{error}</div>}
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Sending OTP…' : 'Send OTP'}</button>
         </form>

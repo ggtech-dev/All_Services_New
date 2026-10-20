@@ -94,5 +94,8 @@ export async function uploadImage(file) {
 export const formatPrice = (p, unit) =>
   Number(p) > 0 ? `₹${Number(p).toLocaleString('en-IN')}${unit ? ` ${unit}` : ''}` : unit || 'Free';
 
+// "price on discussion" services: no price from us — the customer and the independent partner agree it on the phone
+export const priceTalk = (s) => !!s && !(Number(s.base_price) > 0) && /discussion/i.test(s.price_unit || '');
+
 export const formatEta = (m) =>
   m == null ? '—' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} hr` : `${Math.round(m / 1440)} day`;

@@ -128,7 +128,7 @@ export function CartProvider({ children }) {
       // for a normal shop. If the cart holds the other kind of order, the app asks first (in-app box, no browser pop-up)
       // and runs fn only after "Clear cart and continue".
       withClaim: (target, fn) => {
-        const want = target ? { id: target.id, name: target.name, slug: target.slug } : null;
+        const want = target ? { id: target.id, name: target.name, slug: target.slug, ...(target.is_village && { village: true }) } : null;
         if ((via?.id || null) === (want?.id || null)) return fn();
         const start = () => {
           setItems(() => []);
@@ -141,10 +141,10 @@ export function CartProvider({ children }) {
           return fn();
         }
         const msg = want
-            ? `Your cart has items for a normal delivery. ⚡ ${want.name} is a separate order.
+            ? `Your cart has items for a normal delivery. ${want.village ? '🏡' : '⚡'} ${want.name} is a separate order.
 
 Clear the cart and start an instant order?`
-            : `Your cart has a ⚡ ${via.name} order. Normal shop items are a separate order.
+            : `Your cart has a ${via.village ? '🏡' : '⚡'} ${via.name} order. Normal shop items are a separate order.
 
 Clear the cart and start a new one?`;
         askConfirm(msg, { okText: 'Clear cart and continue', cancelText: 'Keep my cart' }).then((yes) => yes && start());

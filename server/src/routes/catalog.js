@@ -24,7 +24,8 @@ router.get('/localities', async (req, res, next) => {
     // ?franchise= (agent sign-up) or the customer's city
     const fr = /^\d{1,9}$/.test(String(req.query.franchise || '')) ? Number(req.query.franchise) : cityOf(req);
     const { rows } = await query(
-      `SELECT l.id, l.name, l.pincode, l.lat::float AS lat, l.lng::float AS lng, l.franchise_id, f.city
+      `SELECT l.id, l.name, l.pincode, l.lat::float AS lat, l.lng::float AS lng, l.franchise_id, f.city,
+              l.is_village, l.village_band, CASE WHEN l.is_village THEN fn_village_fee(l.id) END AS village_fee
          FROM localities l LEFT JOIN franchises f ON f.id = l.franchise_id
         WHERE l.is_active AND (f.id IS NULL OR f.status = 'active') AND ($1::int IS NULL OR l.franchise_id = $1)
         ORDER BY f.city NULLS LAST, l.name`,
@@ -127,7 +128,7 @@ router.get('/categories/:slug', async (req, res, next) => {
               (SELECT count(*) FROM services x WHERE x.parent_id = s.id AND x.is_active AND fn_service_visible($2, x.id))::int AS type_count,
               (SELECT count(*) FROM products p WHERE p.service_id = ANY (s.id || coalesce(s.source_service_ids, ARRAY[]::int[])) AND p.is_active
                  AND ($2::int IS NULL OR fn_product_visible($2, p.id)))::int AS product_count
-         FROM services s WHERE s.category_id = $1 AND s.is_active AND s.parent_id IS NULL AND fn_service_visible($2, s.id)
+         FROM services s WHERE s.category_id = $1 AND s.is_active AND s.parent_id IS NULL AND NOT s.home_card AND fn_service_visible($2, s.id)
         ORDER BY s.is_featured DESC, s.sort_order`,
       [cat.rows[0].id, cityOf(req)]
     );
@@ -166,6 +167,27 @@ router.get('/shops', async (req, res, next) => {
 });
 
 // Services highlighted on the home page (e.g. fresh vegetables 6–10 AM).
+// 💧 Services with their own big card at the top of the home page (drinking water cans), with their items.
+router.get('/home-cards', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT s.id, s.slug, s.name, s.description, s.image_url, s.price_unit, s.eta_minutes, s.price_on_bill,
+              c.icon AS category_icon, c.color AS category_color,
+              coalesce((SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'brand', p.brand, 'unit', p.unit, 'price', p.price,
+                                 'mrp', p.mrp, 'icon', p.icon, 'image_url', p.image_url, 'sell_by', p.sell_by) ORDER BY p.sort_order, p.id)
+                          FROM products p WHERE p.service_id = s.id AND p.is_active AND p.in_stock
+                           AND ($1::int IS NULL OR fn_product_visible($1, p.id))), '[]') AS products
+         FROM services s JOIN categories c ON c.id = s.category_id
+        WHERE s.home_card AND s.is_active AND fn_service_visible($1, s.id)
+        ORDER BY s.sort_order, s.id`,
+      [cityOf(req)]
+    );
+    res.json(rows.filter((s) => s.products.length));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/featured-services', async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -191,7 +213,7 @@ router.get('/instant-services', async (req, res, next) => {
               (SELECT array_agg(x.name ORDER BY array_position(s.source_service_ids, x.id)) FROM services x
                 WHERE x.id = ANY (s.source_service_ids) AND x.is_active) AS source_names
          FROM services s JOIN categories c ON c.id = s.category_id
-        WHERE s.is_active AND c.is_active AND coalesce(cardinality(s.source_service_ids), 0) > 0 AND fn_service_visible($1, s.id)
+        WHERE s.is_active AND c.is_active AND coalesce(cardinality(s.source_service_ids), 0) > 0 AND NOT s.is_village AND fn_service_visible($1, s.id)
         ORDER BY s.sort_order, s.id`,
       [cityOf(req)]
     );

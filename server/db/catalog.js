@@ -141,6 +141,60 @@ export const categories = [
       ['Car Booking', 'car,taxi,driver', 0, 'price on discussion', null],
     ],
   },
+  {
+    // 🛠️ Shop For Me: small things from town shops — write it or send a photo; a regular agent buys it (shop bill),
+    // up to 3 items per order, ₹50 delivery, big bills paid by the customer straight to the shop (setup.js).
+    slug: 'shop-for-me', name: 'Shop For Me', icon: '🛠️', color: '#0f766e',
+    description: 'Small things from town shops — plumbing, electrical, hardware, mobile accessories and more. Write it, we buy and deliver.',
+    image: 'hardware,shop',
+    services: [
+      ['Plumbing & Sanitary Items', 'plumbing,pipe', 0, 'as per shop bill', 120],
+      ['Electrical Items', 'electrical,switch', 0, 'as per shop bill', 120],
+      ['Hardware, Tools & Paint', 'hardware,tools', 0, 'as per shop bill', 120],
+      ['Mobile & Computer Accessories', 'mobile,charger', 0, 'as per shop bill', 120],
+      ['Household Utility Items', 'bucket,household', 0, 'as per shop bill', 120],
+      ['Garden & Plant Supplies', 'garden,plants', 0, 'as per shop bill', 120],
+      ['Stationery & Small Items', 'stationery,pens', 0, 'as per shop bill', 120],
+      ['Anything Else (small items)', 'shopping,bag', 0, 'as per shop bill', 120],
+    ],
+  },
+  {
+    // 👷 Daily Workers: a free directory of local workers added by the franchise admin (more_services.sql).
+    slug: 'daily-workers', name: 'Daily Workers', icon: '👷', color: '#b45309',
+    description: 'Masons, helpers, painters and more near you — see their numbers and call them directly. Free.',
+    image: 'construction,worker',
+    services: [
+      ['Daily Workers', 'construction,worker', 0, 'call directly', null],
+    ],
+  },
+  {
+    // 💡 Digital Services: requests for websites, apps, software and video editing — go to HQ only (more_services.sql).
+    slug: 'digital-services', name: 'Digital Services', icon: '💡', color: '#2563eb',
+    description: 'Your vision, our execution — websites, mobile apps, software and video editing.',
+    image: 'laptop,design',
+    services: [
+      ['Digital Services', 'laptop,design', 0, 'quote on call', null],
+    ],
+  },
+  {
+    // 🏡 Village Needs: villages within 15 km — kirana, vegetables, meat and anything else, next-day delivery by our own
+    // staff (our_service_employees). Works like Instant Delivery (village.sql).
+    slug: 'village-needs', name: 'Village Needs', icon: '🏡', color: '#65a30d',
+    description: 'For villages near town — kirana, vegetables, fresh meat and anything else, delivered next day by our own team.',
+    image: 'village,india',
+    services: [
+      ['Village Needs', 'village,shop', 0, 'next-day delivery', 1440],
+    ],
+  },
+  {
+    // 🚗 Share Ride: book seats in commercial cars going between towns (share_ride.sql). Car owners: shared_car_agent.
+    slug: 'share-ride', name: 'Share Ride', icon: '🚗', color: '#7c3aed',
+    description: 'Book a seat in a car going your way — Siddipet to Hyderabad and more. Choose your seat, pay the car owner.',
+    image: 'car,road',
+    services: [
+      ['Share Ride', 'car,road', 0, 'price per seat', null],
+    ],
+  },
 ];
 
 // Seed products inside services, keyed by "<category slug>/<service name>".
@@ -308,6 +362,8 @@ export const serviceTypes = [
   ['events_agent', 'Event partners', 'Event partner', '🎉'], // Events bookings only
   ['car_rental_agent', 'Car partners', 'Car partner', '🚗'], // Vehicle Rental (car bookings) only — subscription
   ['doctor_type', 'Doctors & care', 'Doctor partner', '🩺'], // Home Doctor Visit types only — subscription per type
+  ['our_service_employees', 'Our service employees', 'Our delivery staff', '🏢'], // company's own staff: 💧 water cans, 🏡 Village Needs
+  ['shared_car_agent', 'Share Ride car owners', 'Car owner', '🚗'], // 🚗 Share Ride journeys (commercial cars) — subscription
 ];
 
 // Which type of agent does each seeded service. Anything not listed goes to regular agents ('delivery').
@@ -339,6 +395,9 @@ export const serviceSkills = {
   'Ambulance Booking': 'doctor_type',
   'Home Doctor Visit': 'doctor_type',
   'Car Booking': 'car_rental_agent',
+  'Drinking Water Delivery (20L cans, bottles)': 'our_service_employees',
+  'Village Needs': 'our_service_employees',
+  'Share Ride': 'shared_car_agent',
   'Photography': 'events_agent',
   'Videography': 'events_agent',
   'Wedding Planning': 'events_agent',

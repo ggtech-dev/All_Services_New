@@ -854,3 +854,70 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 
 /* in-app confirmation box */
 .confirm-text { white-space: pre-line; margin: 0; font-size: 15px; line-height: 1.5; }
+
+/* 🏡 villages (Areas page) */
+.village-tag { color: #3f6212; }
+.area-kind { display: flex; gap: 8px; }
+.area-kind button { flex: 1; padding: 10px; border-radius: 10px; border: 2px solid var(--border, #e5e7eb); background: #fff; font: inherit; cursor: pointer; }
+.area-kind button.active { border-color: #65a30d; background: #f7fee7; font-weight: 700; }
+.village-band { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: #f7fee7; border: 1px solid #d9f99d; }
+.village-fees .form-row { align-items: end; }
+.village-fee-list { margin: 0; padding-left: 18px; }
+
+/* 🚗 Share Ride admin */
+.share-admin .how-it-works p { margin: 6px 0 0; line-height: 1.6; }
+.doc-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ride-status { font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #f3f4f6; white-space: nowrap; display: inline-block; }
+.ride-status.ok { background: #dcfce7; color: #166534; }
+.ride-status.warn { background: #fef3c7; color: #92400e; }
+.ride-status.bad { background: #fee2e2; color: #991b1b; }
+.warn-text { color: #b45309; }
+.model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.model-card { display: grid; gap: 4px; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--border, #e5e7eb); background: #fff; font: inherit; cursor: pointer; }
+.model-card:hover { border-color: #7c3aed; }
+.model-card small { color: #64748b; }
+.model-form { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.model-row { display: grid; grid-template-columns: 1fr 90px auto; gap: 6px; }
+.mono { font-family: ui-monospace, Consolas, monospace; letter-spacing: .2em; text-transform: uppercase; }
+.place-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.place-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 12px; border-radius: 999px; background: #f5f3ff; }
+.place-chip.off { opacity: .55; }
+@media (max-width: 720px) { .model-form { grid-template-columns: 1fr; } }
+
+/* seat map (Share Ride) */
+.seatmap { display: grid; gap: 10px; padding: 14px; border-radius: 18px; background: #f8fafc; border: 2px solid #e2e8f0; max-width: 360px; margin: 0 auto; }
+.seatmap-front { text-align: center; font-size: 12px; color: #64748b; letter-spacing: .04em; }
+.seat-row { display: grid; gap: 4px; }
+.seat-row-name { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+.seat-cells { display: flex; gap: 8px; justify-content: space-between; }
+.seat { flex: 1; min-width: 0; max-width: 70px; height: 58px; display: grid; place-items: center; align-content: center; gap: 1px; border-radius: 12px 12px 8px 8px;
+  border: 2px solid transparent; font: inherit; padding: 2px; }
+.seat small { font-size: 10.5px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.seat-icon { font-size: 18px; line-height: 1; }
+.seat-gap { background: transparent; }
+.seat-driver { background: #e2e8f0; color: #475569; }
+.seat-free { background: #dcfce7; border-color: #86efac; color: #166534; cursor: pointer; }
+.seat-free:hover { border-color: #16a34a; }
+.seat-sel { background: #dbeafe; border-color: #2563eb; color: #1e3a8a; cursor: pointer; box-shadow: 0 0 0 2px #bfdbfe; }
+.seat-taken, .seat-blocked { background: #e5e7eb; border-color: #d1d5db; color: #6b7280; cursor: not-allowed; }
+.seat-legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; font-size: 12px; color: #475569; }
+.seat-dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -2px; margin-right: 3px; }
+.seat-dot.free { background: #dcfce7; border: 1px solid #86efac; }
+.seat-dot.sel { background: #dbeafe; border: 1px solid #2563eb; }
+.seat-dot.taken { background: #e5e7eb; border: 1px solid #d1d5db; }
+
+.shop-pref-note { display: block; width: 100%; margin-top: 4px; color: #92400e; font-size: 12.5px; }
+
+/* 👷 Daily Workers · 💡 Digital Services (admin) */
+.consent-line { padding: 10px 12px; border-radius: 10px; background: #fffbeb; border: 1px solid #fde68a; }
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat-row .stat { display: grid; gap: 2px; }
+.stat-row .stat b { font-size: 26px; }
+.digital-req { display: grid; gap: 8px; }
+.digital-req.status-new { border-left: 4px solid #2563eb; }
+.digital-req.status-won { border-left: 4px solid #16a34a; }
+.digital-req-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.digital-details { margin: 0; white-space: pre-wrap; }
+.digital-update { display: grid; grid-template-columns: 180px 1fr auto; gap: 8px; }
+@media (max-width: 640px) { .digital-update { grid-template-columns: 1fr; } }

@@ -13,6 +13,8 @@ import promotionRoutes from './routes/promotions.js';
 import agentRoutes, { applyRouter } from './routes/agent.js';
 import { pushRouter } from './push.js';
 import superRoutes from './routes/super.js';
+import shareRideRoutes from './routes/shareRide.js';
+import { digital as digitalRoutes, workers as workerRoutes } from './routes/moreServices.js';
 import franchiseRoutes from './routes/franchise.js';
 import meRoutes from './routes/me.js';
 
@@ -46,6 +48,9 @@ app.use('/api/push', pushRouter);
 app.use('/api/super', superRoutes); // Super Admin (HQ)
 app.use('/api/franchise', franchiseRoutes); // franchise admin pages
 app.use('/api/me', meRoutes); // customer: complaints
+app.use('/api/workers', workerRoutes); // 👷 Daily Workers directory (+ /admin)
+app.use('/api/digital', digitalRoutes); // 💡 Digital Services requests (+ /admin: HQ only)
+app.use('/api/share-ride', shareRideRoutes); // 🚗 Share Ride: search, seats, tickets · /owner · /admin
 app.use('/api', catalogRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 

@@ -58,7 +58,13 @@ router.get('/orders-stats', h(async (req, res) => {
             'low_ratings', (SELECT count(*) FROM order_ratings r JOIN orders o ON o.id = r.order_id
                              WHERE r.stars <= 2 AND r.created_at >= now() - interval '7 days' AND ($1::int IS NULL OR o.franchise_id = $1)),
             'pending_requests', (SELECT count(*) FROM catalog_requests WHERE status = 'pending' AND ($1::int IS NULL OR franchise_id = $1)),
-            'open_complaints', (SELECT count(*) FROM complaints WHERE status IN ('open', 'in_progress') AND ($1::int IS NULL OR franchise_id = $1))) AS s`,
+            'open_complaints', (SELECT count(*) FROM complaints WHERE status IN ('open', 'in_progress') AND ($1::int IS NULL OR franchise_id = $1)),
+            'pending_cars', (SELECT count(*) FROM shared_cars WHERE status = 'pending' AND ($1::int IS NULL OR franchise_id = $1)),
+            'worker_reports', (SELECT count(*) FROM worker_reports r JOIN workers w ON w.id = r.worker_id
+                                WHERE r.status = 'open' AND ($1::int IS NULL OR w.franchise_id = $1)),
+            'new_digital', (SELECT count(*) FROM digital_requests WHERE status = 'new'),
+            'rides_to_check', (SELECT count(*) FROM ride_bookings b JOIN share_rides r ON r.id = b.ride_id
+                                WHERE b.status = 'paid' AND b.paid_at < now() - interval '1 hour' AND ($1::int IS NULL OR r.franchise_id = $1))) AS s`,
     [req.scope]
   );
   res.json(rows[0].s);
@@ -193,7 +199,7 @@ router.get('/customers/:id', h(async (req, res) => {
 }));
 
 // ---------- agents ----------
-// ?state=free|busy|offline|pending|rejected|suspended
+// ?state=free|busy|offline|pending|rejected|suspended|removed
 router.get('/agents', h(async (req, res) => {
   const { rows } = await query(
     `SELECT v.user_id, v.username, v.full_name, v.phone, v.email, v.status, v.state, v.is_online, v.vehicle_type,
@@ -207,7 +213,7 @@ router.get('/agents', h(async (req, res) => {
       WHERE ($1::text IS NULL OR v.state = $1)
         AND ($2::text IS NULL OR $2 = ANY (v.skills))
         AND ($3::int IS NULL OR v.franchise_id = $3)
-      ORDER BY array_position(ARRAY['pending','free','busy','offline','suspended','rejected'], v.state), v.full_name`,
+      ORDER BY array_position(ARRAY['pending','free','busy','offline','suspended','rejected','removed'], v.state), v.full_name`,
     [req.query.state || null, req.query.skill || null, req.scope]
   );
   res.json(rows);
@@ -286,7 +292,14 @@ router.patch('/agents/:id/skills', h(async (req, res) => {
   res.status(204).end();
 }));
 
-// body: { status: 'active' | 'suspended' }
+// The franchise admin takes an agent off for good (kept for old orders, wallet and ratings; "Restore" brings them
+// back). body: { reason }
+router.post('/agents/:id/remove', h(async (req, res) => {
+  await asActor(req.user.id, (db) => db.query('CALL sp_remove_agent($1,$2,$3)', [Number(req.params.id), req.body?.reason || null, req.user.id]));
+  res.status(204).end();
+}));
+
+// body: { status: 'active' | 'suspended' } — 'active' also restores a removed agent
 router.patch('/agents/:id/status', h(async (req, res) => {
   await asActor(req.user.id, (db) => db.query('CALL sp_set_agent_status($1,$2)', [Number(req.params.id), req.body?.status]));
   res.status(204).end();
@@ -519,15 +532,29 @@ const saveLocality = (withId) => h(async (req, res) => {
     franchise = one[0].id;
   }
   const { rows } = await asActor(req.user.id, (db) =>
-    db.query('SELECT * FROM fn_save_locality($1,$2,$3,$4,$5,$6,$7)', [
+    db.query('SELECT * FROM fn_save_locality($1,$2,$3,$4,$5,$6,$7,$8,$9)', [
       withId ? Number(req.params.id) : null, typeof b.name === 'string' ? b.name : null,
       typeof b.pincode === 'string' ? b.pincode : null, num(b.lat), num(b.lng),
       typeof b.is_active === 'boolean' ? b.is_active : null, franchise,
+      typeof b.is_village === 'boolean' ? b.is_village : null, num(b.village_band), // 🏡 village + distance band (1 / 2)
     ])
   );
   res.status(withId ? 200 : 201).json(rows[0]);
 });
 router.post('/localities', saveLocality(false));
+
+// 🏡 Village delivery charges of the franchise (up to 10 km / 10–15 km). Set by the franchise admin; HQ watches.
+router.get('/village-fees', h(async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, name, city, village_fee_near, village_fee_far FROM franchises
+      WHERE ($1::int IS NULL OR id = $1) AND status <> 'disabled' ORDER BY city`, [req.scope]);
+  res.json({ franchises: rows, can_edit: !req.isSuper });
+}));
+router.put('/village-fees', h(async (req, res) => {
+  if (req.isSuper || req.scope == null) return res.status(403).json({ error: 'Village charges are set by the franchise admin of each city' });
+  await asActor(req.user.id, (db) => db.query('CALL sp_set_village_fees($1,$2,$3)', [req.scope, num(req.body?.near), num(req.body?.far)]));
+  res.status(204).end();
+}));
 router.put('/localities/:id', saveLocality(true));
 
 // ---------- service types (which agents do which services) ----------

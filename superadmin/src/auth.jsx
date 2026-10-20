@@ -46,12 +46,6 @@ export function AuthProvider({ children }) {
         handleAuth(d);
         return d.user;
       }),
-    // Sign-up step 2: the code from the email creates the account and logs in.
-    completeRegistration: (email, code) =>
-      api('/auth/register/verify', { method: 'POST', body: { email, code } }).then((d) => {
-        handleAuth(d);
-        return d.user;
-      }),
     // 📱 Mobile OTP: path /auth/phone/verify or /auth/phone/complete. New number → { needName, proof } (no login yet).
     loginWithPhone: (path, body) =>
       api(path, { method: 'POST', body }).then((d) => {
@@ -59,13 +53,7 @@ export function AuthProvider({ children }) {
         handleAuth(d);
         return d.user;
       }),
-    // Log in with the 6-digit code emailed to the user.
-    loginWithCode: (email, code, portal = 'user') =>
-      api('/auth/otp/login', { method: 'POST', body: { email, code, portal } }).then((d) => {
-        handleAuth(d);
-        return d.user;
-      }),
-    // After profile changes (e.g. email verified), refresh the stored user.
+    // After profile changes (e.g. a password set), refresh the stored user.
     setUser,
     logout: async () => {
       await dropPush(); // this device stops getting this account's notifications

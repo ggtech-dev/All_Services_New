@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { api, formatEta, formatPrice } from '../api.js';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { api, formatEta, formatPrice, priceTalk } from '../api.js';
+import PartnerNote from '../components/PartnerNote.jsx';
 import SmartImage from '../components/SmartImage.jsx';
 import { windowLabel } from '../qty.js';
 import Skeleton from '../components/Skeleton.jsx';
@@ -22,8 +23,14 @@ export default function Category() {
     [data, search]
   );
 
+  if (slug === 'share-ride') return <Navigate to="/share-ride" replace />; // 🚗 search + seat booking page
+  if (slug === 'daily-workers') return <Navigate to="/workers" replace />; // 👷 free workers list
+  if (slug === 'digital-services') return <Navigate to="/digital" replace />; // 💡 requests to our team
   if (error) return <div className="alert">{error} — <Link to="/">back home</Link></div>;
   if (!data) return <Skeleton variant="grid" />;
+  // a category with just one shop (🏡 Village Needs) opens that shop straight away
+  const only = data.services.length === 1 ? data.services[0] : null;
+  if (only && (only.product_count > 0 || only.allows_list) && !only.type_count) return <Navigate to={`/service/${only.slug}`} replace />;
 
   const { category } = data;
   return (
@@ -37,6 +44,10 @@ export default function Category() {
         </div>
         <input className="search" placeholder="Search services…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </section>
+      {data.services.some(priceTalk) && <PartnerNote />}
+      {category.slug === 'shop-for-me' && (
+        <p className="market-note">🛠️ Small things from town shops. Write what you need (or send a photo) — a delivery partner buys it and brings it. <b>Up to 3 items per order · ₹50 delivery</b> · you pay as per the shop bill.</p>
+      )}
 
       <div className="service-grid">
         {services.map((s) => (
@@ -49,7 +60,7 @@ export default function Category() {
             <div className="service-body">
               <h3>{s.name}</h3>
               <div className="service-meta">
-                <span className="price">{s.price_on_bill ? (s.product_count > 0 ? 'Market price' : 'As per shop bill') : formatPrice(s.base_price, s.price_unit)}</span>
+                <span className="price">{priceTalk(s) ? '💬 Price: talk to partner' : s.price_on_bill ? (s.product_count > 0 ? 'Market price' : 'As per shop bill') : formatPrice(s.base_price, s.price_unit)}</span>
                 <span className="eta">{s.window_from != null ? `🕕 ${windowLabel(s.window_from, s.window_to)}` : `⏱ ${formatEta(s.eta_minutes)}`}</span>
               </div>
               {s.type_count > 0 ? (

@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import AuthLayout from './AuthLayout.jsx';
-import EmailCode from '../components/EmailCode.jsx';
 import PhoneLogin from '../components/PhoneLogin.jsx';
 import { InstallButton } from '../components/InstallApp.jsx';
 import { HOME_OF, PORTALS_OF, has } from '../appKind.js';
 
 const ALL_PORTALS = {
-  user: { label: 'User', icon: '👤', title: 'Welcome back 👋', subtitle: 'Log in to book your next service', button: 'Login' },
+  user: { label: 'User', icon: '👤', title: 'Welcome 👋', subtitle: 'Log in with your mobile number to book services', button: 'Login' },
   agent: { label: 'Agent', icon: '🛵', title: 'Agent login', subtitle: 'Go online, pick orders near you and track your earnings', button: 'Login to agent app' },
   admin: { label: 'Admin', icon: '🛡️', title: 'Franchise admin login', subtitle: 'Run your city: orders, agents, areas and reports', button: 'Login to admin panel' },
   superadmin: { label: 'HQ', icon: '👑', title: 'Super Admin login', subtitle: 'All franchises, the master catalog and platform reports', button: 'Login to HQ' },
@@ -19,24 +18,24 @@ const HOME = { user: '/', agent: '/agent', admin: '/admin', superadmin: '/super'
 const homeFor = (role) => HOME_OF[role] || '/';
 const STAFF = ['admin', 'superadmin'];
 
+// Password login stays for customers and agents until 2Factor's SMS approval is final; then set this to false
+// and only 📱 Mobile OTP is left. Admins always use a password.
+const PASSWORD_LOGIN = true;
+
 export default function Login() {
-  const { user, login, loginWithCode, loginWithPhone } = useAuth();
+  const { user, login, loginWithPhone } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const portal = PORTALS[params.get('as')] ? params.get('as') : PORTALS_OF[0];
-  // Customers: 📱 mobile OTP first (most people have a phone, not everyone uses email), or an email code, or a password.
-  // Agents: password or email code. Admins always use a password.
-  const asked = params.get('method');
-  const method = STAFF.includes(portal) ? 'password'
-    : portal === 'user' && (asked === 'phone' || !asked) ? 'phone'
-    : asked === 'code' ? 'code' : 'password';
+  // Customers and agents: 📱 mobile OTP first, or mobile number / username + password.
+  const method = STAFF.includes(portal) ? 'password' : PASSWORD_LOGIN && params.get('method') === 'password' ? 'password' : 'phone';
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to={homeFor(user.role)} replace />;
+  if (user) return <Navigate to={user.role === 'customer' ? location.state?.from || '/' : homeFor(user.role)} replace />;
 
   const p = PORTALS[portal];
   const go = (next) => {
@@ -68,16 +67,17 @@ export default function Login() {
         ))}
       </div>}
 
-      {!STAFF.includes(portal) && (
+      {!STAFF.includes(portal) && PASSWORD_LOGIN && (
         <div className="method-switch" role="tablist" aria-label="Login method">
-          {portal === 'user' && <button type="button" role="tab" aria-selected={method === 'phone'} className={method === 'phone' ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>📱 Mobile OTP</button>}
+          <button type="button" role="tab" aria-selected={method === 'phone'} className={method === 'phone' ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>📱 Mobile OTP</button>
           <button type="button" role="tab" aria-selected={method === 'password'} className={method === 'password' ? 'active' : ''} onClick={() => go({ portal, method: 'password' })}>🔑 Password</button>
-          <button type="button" role="tab" aria-selected={method === 'code'} className={method === 'code' ? 'active' : ''} onClick={() => go({ portal, method: 'code' })}>📧 Email code</button>
         </div>
       )}
 
       {method === 'phone' ? (
         <PhoneLogin
+          key={portal}
+          portal={portal}
           submitLabel={p.button}
           login={async (path, body) => {
             const d = await loginWithPhone(path, body);
@@ -85,27 +85,16 @@ export default function Login() {
             return d;
           }}
         />
-      ) : method === 'code' ? (
-        <EmailCode
-          key={portal}
-          requestPath="/auth/otp/request"
-          extra={{ portal }}
-          submitLabel={p.button}
-          onCode={async (email, code) => {
-            await loginWithCode(email, code, portal);
-            done();
-          }}
-        />
       ) : (
         <form onSubmit={onSubmit} className="form">
           <label>
-            Username or email
+            {STAFF.includes(portal) ? 'Username' : 'Mobile number or username'}
             <input
               autoFocus
               autoComplete="username"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              placeholder={STAFF.includes(portal) ? 'Admin username' : 'Username or email'}
+              placeholder={STAFF.includes(portal) ? 'Admin username' : '10-digit mobile number or username'}
               required
             />
           </label>
@@ -135,7 +124,11 @@ export default function Login() {
         </form>
       )}
 
-      {portal === 'user' && has('customer') && <p className="switch">New here? <Link to="/register">Create an account</Link></p>}
+      {portal === 'user' && has('customer') && (
+        <Link to={location.state?.from && !/^\/(checkout|orders|account)/.test(location.state.from) ? location.state.from : '/'} className="btn btn-ghost btn-block guest-link">
+          👀 Continue as guest — just looking
+        </Link>
+      )}
       {portal === 'agent' && has('agent') && <p className="switch">Want to work with us? <Link to="/agent/apply">Apply as an agent</Link></p>}
       {portal === 'admin' && <p className="switch">Franchise admin logins are created by HQ (Super Admin).</p>}
       {portal === 'superadmin' && <p className="switch">HQ only. Every login is recorded.</p>}

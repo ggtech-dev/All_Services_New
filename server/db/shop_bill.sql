@@ -58,6 +58,16 @@ BEGIN
   IF p_mode NOT IN ('customer_upi', 'agent_cash') THEN
     RAISE EXCEPTION 'Choose how the shop is paid' USING ERRCODE = '22023';
   END IF;
+  -- 🛠️ Shop For Me: a big bill is paid by the customer straight to the shop (UPI), never with the agent's cash
+  IF p_mode = 'agent_cash' AND p_amount > (
+       SELECT min(s.bill_cash_limit) FROM order_items i LEFT JOIN products p ON p.id = i.product_id
+         JOIN services s ON s.id = coalesce(i.service_id, p.service_id)
+        WHERE i.order_id = v.id AND s.bill_cash_limit IS NOT NULL) THEN
+    RAISE EXCEPTION 'Bills above ₹% are paid by the customer directly to the shop: choose "Customer pays the shop by UPI"',
+      (SELECT trim_scale(min(s.bill_cash_limit)) FROM order_items i LEFT JOIN products p ON p.id = i.product_id
+         JOIN services s ON s.id = coalesce(i.service_id, p.service_id) WHERE i.order_id = v.id AND s.bill_cash_limit IS NOT NULL)
+      USING ERRCODE = '22023';
+  END IF;
   IF p_mode = 'customer_upi' THEN
     IF v_upi IS NULL AND coalesce(p_qr_photo, v.shop_qr_photo) IS NULL THEN
       RAISE EXCEPTION 'Add the shop''s UPI QR photo or UPI ID so the customer can pay' USING ERRCODE = '22023';

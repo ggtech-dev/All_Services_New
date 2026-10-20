@@ -62,7 +62,11 @@ router.get('/quote', h(async (req, res) => {
   const lists = String(req.query.lists || '').split(',').filter((x) => /^\d{1,9}$/.test(x)).slice(0, 40).map(Number);
   const service = /^\d{1,9}$/.test(String(req.query.service || '')) ? Number(req.query.service) : null;
   const via = /^\d{1,9}$/.test(String(req.query.via || '')) ? Number(req.query.via) : null;
-  const { rows } = via
+  const locality = /^\d{1,9}$/.test(String(req.query.locality || '')) ? Number(req.query.locality) : null;
+  const village = via ? (await query('SELECT is_village FROM services WHERE id = $1', [via])).rows[0]?.is_village : false;
+  const { rows } = village
+    ? await query('SELECT fn_village_quote($1,$2) AS q', [via, locality]) // 🏡 Village Needs: the village's charge, next-day slots
+    : via
     ? await query('SELECT fn_instant_quote($1,$2) AS q', [req.user.id, via]) // ⚡ Instant: its own charge, no time window
     : await query('SELECT fn_delivery_quote($1,$2,$3,$4) AS q', [req.user.id, products, service, lists]);
   const q = rows[0]?.q;

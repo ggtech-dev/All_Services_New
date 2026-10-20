@@ -300,6 +300,18 @@ ALTER TABLE users      ADD COLUMN IF NOT EXISTS franchise_id INT REFERENCES fran
 ALTER TABLE users      ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 CREATE INDEX IF NOT EXISTS orders_franchise_idx ON orders(franchise_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS agents_franchise_idx ON agents(franchise_id);
+
+-- Phone-first login (see login.sql): has_password = false for accounts made by mobile OTP (random password);
+-- 'removed' agents were taken off by the franchise admin (kept for old orders, wallet and ratings).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_status_check;
+ALTER TABLE agents ADD CONSTRAINT agents_status_check CHECK (status IN ('pending', 'active', 'rejected', 'suspended', 'removed'));
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS removed_reason TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS removed_by INT REFERENCES users(id) ON DELETE SET NULL;
+
+-- A service shown as its own big card at the top of the home page (💧 water cans), not inside its category.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS home_card BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS localities_franchise_idx ON localities(franchise_id);
 
 -- Which master services each franchise offers (at launch every franchise gets all of them).
@@ -336,3 +348,17 @@ ALTER TABLE services ADD COLUMN IF NOT EXISTS icon VARCHAR(8);
 
 -- 📱 mobile OTP login (phone_otp.sql): when the number was proved by an OTP
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+
+-- 🏡 Village Needs (village.sql): villages are areas with a distance band (1 = up to 10 km, 2 = 10–15 km from town);
+-- each franchise sets the two village delivery charges; the Village Needs service delivers next day only.
+ALTER TABLE localities ADD COLUMN IF NOT EXISTS is_village   BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE localities ADD COLUMN IF NOT EXISTS village_band SMALLINT CHECK (village_band IN (1, 2));
+ALTER TABLE franchises ADD COLUMN IF NOT EXISTS village_fee_near NUMERIC(10,2) NOT NULL DEFAULT 150 CHECK (village_fee_near >= 0);
+ALTER TABLE franchises ADD COLUMN IF NOT EXISTS village_fee_far  NUMERIC(10,2) NOT NULL DEFAULT 200 CHECK (village_fee_far >= 0);
+ALTER TABLE services   ADD COLUMN IF NOT EXISTS is_village   BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE orders     ADD COLUMN IF NOT EXISTS deliver_on   DATE;   -- next-day (village) orders: the delivery day
+
+-- 🛠️ Shop For Me (2026-10-20): at most this many own-list items per order, and above this shop bill the customer pays
+-- the shop directly by UPI (the agent never carries big cash). NULL = no limit.
+ALTER TABLE services ADD COLUMN IF NOT EXISTS max_items       INT CHECK (max_items > 0);
+ALTER TABLE services ADD COLUMN IF NOT EXISTS bill_cash_limit NUMERIC(10,2) CHECK (bill_cash_limit > 0);

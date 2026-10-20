@@ -854,3 +854,68 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 
 /* in-app confirmation box */
 .confirm-text { white-space: pre-line; margin: 0; font-size: 15px; line-height: 1.5; }
+
+/* application: deliveries & services, or 🚗 Share Ride car owner */
+.owner-type { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.owner-type button { display: grid; gap: 4px; text-align: left; padding: 16px; border-radius: 14px; border: 2px solid var(--border, #e5e7eb); background: #fff; cursor: pointer; font: inherit; }
+.owner-type button:hover { border-color: #7c3aed; background: #faf5ff; }
+.owner-type span { font-size: 28px; }
+.check-line { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+.check-line input { width: auto; margin-top: 3px; }
+
+/* 🏡 village orders */
+.village-chip { background: #ecfccb !important; color: #365314 !important; }
+
+/* 🚗 Share Ride (car owners) */
+.share-owner .shop-tabs { display: flex; gap: 6px; overflow-x: auto; }
+.share-owner .shop-tabs button { flex: 1; white-space: nowrap; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--border, #e5e7eb); background: #fff; font: inherit; cursor: pointer; }
+.share-owner .shop-tabs button.active { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+.ride-live { display: grid; gap: 4px; }
+.ride-live.on { background: #f0fdf4; border-color: #bbf7d0; }
+.ride-live.off { background: #fffbeb; border-color: #fde68a; }
+.ride-live p { margin: 0; }
+.ride-waiting { border: 2px solid #f59e0b; }
+.ride-pay-row, .ride-passengers li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border, #e5e7eb); }
+.ride-pay-row > div:first-child, .ride-passengers li > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.ride-pay-row small, .ride-passengers small { color: #64748b; }
+.ride-pay-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.ride-passengers { list-style: none; margin: 10px 0 0; padding: 0; }
+.ride-b-paid { color: #b45309 !important; font-weight: 700; }
+.ride-b-confirmed { color: #15803d !important; }
+.ride-journey { display: grid; gap: 10px; }
+.ride-journey.cancelled { opacity: .7; }
+.ride-journey-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.ride-journey-head > div { display: grid; }
+.ride-journey-head small { color: #64748b; }
+.ride-count { font-weight: 700; color: #6d28d9; white-space: nowrap; }
+.ride-car { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.ride-car > div { display: grid; gap: 2px; }
+.ride-status { font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #f3f4f6; white-space: nowrap; }
+.ride-status.ok { background: #dcfce7; color: #166534; }
+.ride-status.warn { background: #fef3c7; color: #92400e; }
+.ride-status.bad { background: #fee2e2; color: #991b1b; }
+
+
+/* seat map (Share Ride) */
+.seatmap { display: grid; gap: 10px; padding: 14px; border-radius: 18px; background: #f8fafc; border: 2px solid #e2e8f0; max-width: 360px; margin: 0 auto; }
+.seatmap-front { text-align: center; font-size: 12px; color: #64748b; letter-spacing: .04em; }
+.seat-row { display: grid; gap: 4px; }
+.seat-row-name { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+.seat-cells { display: flex; gap: 8px; justify-content: space-between; }
+.seat { flex: 1; min-width: 0; max-width: 70px; height: 58px; display: grid; place-items: center; align-content: center; gap: 1px; border-radius: 12px 12px 8px 8px;
+  border: 2px solid transparent; font: inherit; padding: 2px; }
+.seat small { font-size: 10.5px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.seat-icon { font-size: 18px; line-height: 1; }
+.seat-gap { background: transparent; }
+.seat-driver { background: #e2e8f0; color: #475569; }
+.seat-free { background: #dcfce7; border-color: #86efac; color: #166534; cursor: pointer; }
+.seat-free:hover { border-color: #16a34a; }
+.seat-sel { background: #dbeafe; border-color: #2563eb; color: #1e3a8a; cursor: pointer; box-shadow: 0 0 0 2px #bfdbfe; }
+.seat-taken, .seat-blocked { background: #e5e7eb; border-color: #d1d5db; color: #6b7280; cursor: not-allowed; }
+.seat-legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; font-size: 12px; color: #475569; }
+.seat-dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -2px; margin-right: 3px; }
+.seat-dot.free { background: #dcfce7; border: 1px solid #86efac; }
+.seat-dot.sel { background: #dbeafe; border: 1px solid #2563eb; }
+.seat-dot.taken { background: #e5e7eb; border: 1px solid #d1d5db; }
+
+.shop-pref-note { display: block; width: 100%; margin-top: 4px; color: #92400e; font-size: 12.5px; }

@@ -151,12 +151,11 @@ export function AgentProfile() {
       <section className="panel profile-card">
         <div className="agent-avatar">{a.full_name[0]}</div>
         <h2>{a.full_name}</h2>
-        <p className="muted">@{a.username} · Agent since {new Date(a.joined_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</p>
+        <p className="muted">📱 +91 {a.phone} · Agent since {new Date(a.joined_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</p>
       </section>
       <section className="panel">
         <dl className="kv">
           <dt>Mobile</dt><dd>{a.phone}</dd>
-          <dt>Email</dt><dd>{a.email || '—'}</dd>
           <dt>Vehicle</dt><dd>{VEHICLES[a.vehicle_type]} {a.vehicle_number}</dd>
           <dt>Area</dt><dd>{a.locality_name || '—'}</dd>
           <dt>Types of work</dt><dd>{(a.skill_list || []).map((s) => `${s.icon} ${s.name}`).join(', ')}</dd>

@@ -29,6 +29,7 @@ export const AGENT_STATE = {
   pending: { label: 'Awaiting approval', color: '#f59e0b' },
   rejected: { label: 'Rejected', color: '#dc2626' },
   suspended: { label: 'Suspended', color: '#7c3aed' },
+  removed: { label: 'Removed', color: '#475569' },
 };
 
 export const VEHICLES = { bike: '🏍️ Bike', scooter: '🛵 Scooter', bicycle: '🚲 Bicycle', auto: '🛺 Auto', van: '🚐 Van', car: '🚗 Car' };

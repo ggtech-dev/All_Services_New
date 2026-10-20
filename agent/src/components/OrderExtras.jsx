@@ -13,6 +13,7 @@ export default function OrderExtras({ order, filesBase, who = 'customer' }) {
             {order.preferred_shop_area && <span className="muted"> · {order.preferred_shop_area}</span>}
           </span>
           {who !== 'customer' && order.preferred_shop_phone && <a className="btn btn-ghost btn-sm" href={`tel:${order.preferred_shop_phone}`}>📞 Call shop</a>}
+          {who === 'agent' && <small className="shop-pref-note">If an item is not at this shop, call the customer before buying anywhere else.</small>}
         </div>
       )}
       {order.has_list_photo && (
