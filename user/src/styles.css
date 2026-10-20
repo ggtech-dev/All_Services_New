@@ -1007,3 +1007,11 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 .instant-tabs { overflow-x: auto; scrollbar-width: none; max-width: 100%; }
 .instant-tabs::-webkit-scrollbar { display: none; }
 .instant-tabs button { flex: 1 0 auto; }
+
+/* login: 👋 Sign in / 🆕 Sign up */
+.account-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.account-switch button { display: grid; gap: 2px; padding: 12px 10px; border-radius: 14px; border: 2px solid var(--border, #e5e7eb); background: #fff; font: inherit; cursor: pointer; text-align: center; }
+.account-switch button b { font-size: 16px; }
+.account-switch button small { color: #6b7280; font-size: 12px; }
+.account-switch button.active { border-color: var(--primary, #4f46e5); background: #eef2ff; }
+.account-switch button.active b { color: var(--primary, #4f46e5); }

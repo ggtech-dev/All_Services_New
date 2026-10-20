@@ -10,7 +10,10 @@ const HINTS = {
   agent_apply: "We'll send a 6-digit OTP to check it's your number. This number will be your login for the agent app.",
 };
 
-export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'user' }) {
+// intent (customers): 'signin' or 'signup' — only the wording changes; the server signs in a known number and
+// creates an account for a new one either way, so nobody gets stuck on the wrong choice.
+export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'user', intent = 'signin' }) {
+  const isSignup = portal === 'user' && intent === 'signup';
   const [step, setStep] = useState('phone'); // 'phone' | 'code' | 'name'
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -95,7 +98,9 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
               />
             </div>
           </label>
-          <p className="muted small">{HINTS[portal] || HINTS.user}</p>
+          <p className="muted small">{portal === 'user'
+            ? (isSignup ? "We'll send a 6-digit OTP to check your number, then ask your name. That's all." : "We'll send a 6-digit OTP to your mobile number.")
+            : HINTS[portal] || HINTS.user}</p>
           {error && <div className="alert">{error}</div>}
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Sending OTP…' : 'Send OTP'}</button>
         </form>
@@ -116,7 +121,7 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
             />
           </label>
           {error && <div className="alert">{error}</div>}
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'Checking…' : submitLabel}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Checking…' : isSignup ? 'Verify number' : submitLabel}</button>
           <button type="button" className="link-btn resend" disabled={busy || wait > 0} onClick={send}>
             {wait > 0 ? `Resend OTP in ${wait}s` : 'Resend OTP'}
           </button>
@@ -125,13 +130,13 @@ export default function PhoneLogin({ login, submitLabel = 'Login', portal = 'use
 
       {step === 'name' && (
         <form className="form" onSubmit={saveName}>
-          <p className="code-sent">✅ <b>+91 {phone}</b> verified. You're new here — what's your name?</p>
+          <p className="code-sent">✅ <b>+91 {phone}</b> verified. {isSignup ? "Last step — what's your name?" : 'No account with this number yet — let’s create one. What’s your name?'}</p>
           <label>
             Your name
             <input value={name} onChange={(e) => setName(e.target.value.slice(0, 60))} autoComplete="name" placeholder="e.g. Ravi Kumar" required autoFocus />
           </label>
           {error && <div className="alert">{error}</div>}
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'Creating your account…' : 'Continue'}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Creating your account…' : '🆕 Create my account'}</button>
         </form>
       )}
     </>

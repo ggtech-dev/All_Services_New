@@ -41,7 +41,6 @@ export default function SupportLinks({ title = 'Need help? Talk to us', classNam
           </a>
         )}
       </div>
-      {phone && <small className="support-detail">{phone}{mail ? ` · ${mail}` : ''}</small>}
     </div>
   );
 }

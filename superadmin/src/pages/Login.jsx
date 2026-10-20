@@ -29,7 +29,9 @@ export default function Login() {
   const [params, setParams] = useSearchParams();
   const portal = PORTALS[params.get('as')] ? params.get('as') : PORTALS_OF[0];
   // Customers and agents: 📱 mobile OTP first, or mobile number / username + password.
-  const method = STAFF.includes(portal) ? 'password' : PASSWORD_LOGIN && params.get('method') === 'password' ? 'password' : 'phone';
+  // customers choose 👋 Sign in (existing) or 🆕 Sign up (new) — both by mobile OTP; a password only for Sign in
+  const signup = portal === 'user' && params.get('mode') === 'signup';
+  const method = STAFF.includes(portal) ? 'password' : PASSWORD_LOGIN && !signup && params.get('method') === 'password' ? 'password' : 'phone';
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -40,7 +42,8 @@ export default function Login() {
   const p = PORTALS[portal];
   const go = (next) => {
     setError('');
-    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }) }, { replace: true, state: location.state }); // keep "where to go after login" when switching tabs
+    setParams({ ...(next.portal !== PORTALS_OF[0] && { as: next.portal }), ...(next.method !== 'phone' && { method: next.method }), ...(next.signup && { mode: 'signup' }) },
+      { replace: true, state: location.state }); // keep "where to go after login" when switching tabs
   };
   const done = () => navigate(portal === 'user' ? location.state?.from || '/' : HOME[portal], { replace: true });
 
@@ -58,7 +61,20 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout title={p.title} subtitle={p.subtitle}>
+    <AuthLayout
+      title={portal !== 'user' ? p.title : signup ? 'Create your account 🆕' : 'Welcome back 👋'}
+      subtitle={portal !== 'user' ? p.subtitle : signup ? 'Sign up free with your mobile number' : 'Sign in with your mobile number'}
+    >
+      {portal === 'user' && has('customer') && (
+        <div className="account-switch" role="tablist" aria-label="Sign in or sign up">
+          <button type="button" role="tab" aria-selected={!signup} className={!signup ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>
+            <b>👋 Sign in</b><small>I already have an account</small>
+          </button>
+          <button type="button" role="tab" aria-selected={signup} className={signup ? 'active' : ''} onClick={() => go({ portal, method: 'phone', signup: true })}>
+            <b>🆕 Sign up</b><small>I am a new customer</small>
+          </button>
+        </div>
+      )}
       {PORTALS_OF.length > 1 && <div className={`portal-switch portals-${PORTALS_OF.length}`} role="tablist" aria-label="Login as">
         {Object.entries(PORTALS).map(([key, v]) => (
           <button key={key} type="button" role="tab" aria-selected={portal === key} className={portal === key ? 'active' : ''} onClick={() => go({ portal: key, method })}>
@@ -67,7 +83,7 @@ export default function Login() {
         ))}
       </div>}
 
-      {!STAFF.includes(portal) && PASSWORD_LOGIN && (
+      {!STAFF.includes(portal) && PASSWORD_LOGIN && !signup && (
         <div className="method-switch" role="tablist" aria-label="Login method">
           <button type="button" role="tab" aria-selected={method === 'phone'} className={method === 'phone' ? 'active' : ''} onClick={() => go({ portal, method: 'phone' })}>📱 Mobile OTP</button>
           <button type="button" role="tab" aria-selected={method === 'password'} className={method === 'password' ? 'active' : ''} onClick={() => go({ portal, method: 'password' })}>🔑 Password</button>
@@ -76,8 +92,9 @@ export default function Login() {
 
       {method === 'phone' ? (
         <PhoneLogin
-          key={portal}
+          key={`${portal}-${signup}`}
           portal={portal}
+          intent={signup ? 'signup' : 'signin'}
           submitLabel={p.button}
           login={async (path, body) => {
             const d = await loginWithPhone(path, body);

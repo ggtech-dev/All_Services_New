@@ -22,7 +22,7 @@ const Loading = () => <div className="center-screen"><div className="spinner" />
 // Old "Create an account" links: the login page (keeps where a guest was going).
 function ToLogin() {
   const location = useLocation();
-  return <Navigate to="/login" replace state={location.state} />;
+  return <Navigate to="/login?mode=signup" replace state={location.state} />;
 }
 
 // Pages anyone can open — guests too: home, categories, shops, doctor types, photo credits.
