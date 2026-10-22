@@ -24,6 +24,10 @@ export default function Credits() {
       {!list && <Skeleton variant="list" />}
       {/* the licence texts stay exactly as the photographers wrote them */}
       <ul className="credits-list" translate="no">
+        <li>
+          <b>Welcome screen — Komati Cheruvu cable bridge, Siddipet</b>
+          <span className="small muted">“KomatiCheruvu.jpg” by hyderabadzone, CC BY-SA 4.0, via Wikimedia Commons</span>
+        </li>
         {shown.map((c) => (
           <li key={c.credit}>
             <b>{c.used_for.slice(0, 4).join(', ')}{c.used_for.length > 4 ? ` +${c.used_for.length - 4}` : ''}</b>

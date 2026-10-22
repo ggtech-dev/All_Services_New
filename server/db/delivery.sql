@@ -34,7 +34,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     'base_fee', base.fee,
     'delivery_fee', fn_delivery_fee_for(p_customer_id, base.fee),
     'free_left', greatest(0, fn_setting_num('free_delivery_orders', 3)
-                   - (SELECT count(*) FROM orders WHERE customer_id = p_customer_id AND status <> 'cancelled'))::int,
+                   - fn_free_deliveries_used(p_customer_id))::int,
     -- items priced by the shop bill (vegetables, meat…)
     'on_bill', EXISTS (SELECT 1 FROM products p JOIN services s ON s.id = p.service_id
                         WHERE p.id = ANY(coalesce(p_product_ids, ARRAY[]::INT[])) AND s.price_on_bill)

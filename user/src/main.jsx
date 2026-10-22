@@ -8,6 +8,7 @@ import { OfflineBar } from './components/InstallApp.jsx';
 import './pwa.js'; // installable app: service worker + install prompt
 import { startTranslation } from './i18n.js';
 import './styles.css';
+import './new-look.css';
 import './admin/admin.css';
 import './agent/agent.css'; // shared bits (.kv, .agent-avatar.small, .btn-agent, apply page) are used outside the agent app too
 

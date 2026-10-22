@@ -879,6 +879,7 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 .partner-note b { display: block; margin-bottom: 4px; }
 .partner-note p { margin: 0; font-size: 14px; line-height: 1.5; }
 .partner-note .partner-note-legal { margin-top: 6px; font-size: 12.5px; opacity: .85; }
+.partner-note .partner-note-key { font-weight: 700; margin-bottom: 2px; }
 .partner-note.compact { margin: 10px 0 0; padding: 10px 12px; }
 
 /* 🏡 Village Needs */

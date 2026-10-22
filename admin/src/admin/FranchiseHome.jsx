@@ -13,6 +13,7 @@ export default function FranchiseHome() {
   const t = stats.data || {};
   const tiles = [
     ['📦', 'Waiting for an agent', t.waiting ?? '…', '/admin/orders?status=placed', t.waiting > 0],
+    ['⏰', 'Overdue orders', t.overdue ?? '…', '/admin/orders?status=overdue', t.overdue > 0],
     ['🚚', 'In progress', t.in_progress ?? '…', '/admin/orders?status=active'],
     ['✅', 'Delivered today', t.delivered_today ?? '…', '/admin/orders?status=delivered'],
     ['🛵', 'Agents free now', t.agents_free ?? '…', '/admin/agents'],

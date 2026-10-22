@@ -13,7 +13,7 @@ import { ToastProvider } from './ui.jsx';
 const FRANCHISE_NAV = [
   { group: 'Daily work' },
   { to: '/admin', label: 'My franchise', icon: '🏠', end: true },
-  { to: '/admin/orders', label: 'Orders & bookings', icon: '📦', badge: 'waiting' },
+  { to: '/admin/orders', label: 'Orders & bookings', icon: '📦', badge: 'waiting', alert: 'overdue' },
   { to: '/admin/agents', label: 'Agents', icon: '🛵', badge: 'pending_applications' },
   { to: '/admin/live', label: 'Live map', icon: '📍' },
   { to: '/admin/complaints', label: 'Complaints', icon: '🙋', badge: 'open_complaints' },
@@ -26,6 +26,7 @@ const FRANCHISE_NAV = [
   { to: '/admin/requests', label: 'Requests to HQ', icon: '📝', badge: 'pending_requests' },
   { to: '/admin/areas', label: 'Service areas & villages', icon: '🗺️' },
   { to: '/admin/shops', label: 'Shops', icon: '🏪' },
+  { to: '/admin/popular', label: 'Popular on home', icon: '⭐' },
   { to: '/admin/messages', label: 'Notifications', icon: '📣' },
   { group: 'Reports' },
   { to: '/admin/reports', label: 'Reports', icon: '📈' },
@@ -33,10 +34,11 @@ const FRANCHISE_NAV = [
   { to: '/admin/activity', label: 'Activity log', icon: '🕘' },
 ];
 
+// HQ runs franchises, the catalog, approvals, money and settings — and WATCHES every city's daily work (view only).
 const SUPER_NAV = [
   { group: 'Overview' },
   { to: '/super', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/super/platform-reports', label: 'Platform reports', icon: '📈' },
+  { to: '/super/reports', label: 'Report Center', icon: '📈' },
   { group: 'Franchises' },
   { to: '/super/franchises', label: 'All franchises', icon: '🏢', end: true },
   { to: '/super/franchises/new', label: 'New franchise', icon: '➕' },
@@ -50,12 +52,12 @@ const SUPER_NAV = [
   { to: '/super/pricing', label: 'Prices & items', icon: '₹' },
   { to: '/super/service-types', label: 'Agent types', icon: '🧩' },
   { to: '/super/delivery-charges', label: 'Delivery charges', icon: '🚚' },
+  { to: '/super/popular', label: 'Popular on home', icon: '⭐' },
   { to: '/super/promotions', label: 'Offers & promotions', icon: '📢' },
-  { group: 'Operations (franchise chosen above)' },
-  { to: '/super/orders', label: 'Orders & bookings', icon: '📦', badge: 'waiting' },
+  { group: 'Watch cities · view only (city chosen above)' },
+  { to: '/super/orders', label: 'Orders & bookings', icon: '📦', badge: 'waiting', alert: 'overdue' },
   { to: '/super/agents', label: 'Agents', icon: '🛵', badge: 'pending_applications' },
   { to: '/super/live', label: 'Live map', icon: '📍' },
-  { to: '/super/reports', label: 'Reports', icon: '📉' },
   { to: '/super/complaints', label: 'Complaints', icon: '🙋', badge: 'open_complaints' },
   { to: '/super/ratings', label: 'Reviews & ratings', icon: '⭐', badge: 'low_ratings' },
   { to: '/super/subscriptions', label: 'Subscriptions', icon: '💳', badge: 'pending_subscriptions' },
@@ -121,8 +123,8 @@ export default function AdminLayout() {
       <div className={`admin ${isSuper ? 'is-super' : ''} ${open ? 'nav-open' : ''}`} translate="no">
         <aside className="admin-sidebar">
           <Link to={base} className="brand admin-brand">
-            <span className="brand-logo">AS</span>
-            <span>All Services <small>{isSuper ? 'Super Admin · HQ' : franchise ? `${franchise.city} franchise` : 'Franchise admin'}</small></span>
+            <span className="brand-logo" translate="no" aria-hidden="true">A<span>S</span></span>
+            <span className="brand-name" translate="no">All <em>Services</em> <small>{isSuper ? 'Super Admin · HQ' : franchise ? `${franchise.city} franchise` : 'Franchise admin'}</small></span>
           </Link>
           <nav onClick={() => setOpen(false)}>
             {NAV.map((n, i) => (n.group ? (
@@ -131,6 +133,7 @@ export default function AdminLayout() {
               <NavLink key={n.to} to={n.to} end={n.end} className="admin-nav-link">
                 <span className="admin-nav-icon">{n.icon}</span> {n.label}
                 {n.badge && counts[n.badge] > 0 && <span className="nav-badge">{counts[n.badge]}</span>}
+                {n.alert && counts[n.alert] > 0 && <span className="nav-badge nav-badge-alert" title={`${counts[n.alert]} overdue`}>⏰{counts[n.alert]}</span>}
               </NavLink>
             )))}
           </nav>

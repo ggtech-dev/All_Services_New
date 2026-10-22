@@ -49,6 +49,17 @@ CREATE TABLE IF NOT EXISTS catalog_requests (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS catalog_requests_idx ON catalog_requests(status, created_at DESC);
+-- 🗺️ areas and villages are set by HQ; a franchise asks for a new one ('area') or to switch one off ('area_off') — geo.sql
+-- ⭐ … and to add a service to the home page's popular row ('popular') or take one off it ('popular_off') — popular.sql
+ALTER TABLE catalog_requests DROP CONSTRAINT IF EXISTS catalog_requests_kind_check;
+ALTER TABLE catalog_requests ALTER COLUMN kind TYPE VARCHAR(12);
+ALTER TABLE catalog_requests ADD CONSTRAINT catalog_requests_kind_check CHECK (kind IN ('service', 'product', 'area', 'area_off', 'popular', 'popular_off'));
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS popular_id INT; -- the popular card to take off (home_popular, popular.sql)
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS area_lat     NUMERIC(9,6);
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS area_lng     NUMERIC(9,6);
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS area_pincode VARCHAR(10);
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS village_band SMALLINT CHECK (village_band IN (1, 2)); -- NULL = town area
+ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS locality_id  INT REFERENCES localities(id) ON DELETE SET NULL;
 
 -- Customer complaints (about an order or in general). Handled by the dealer; the Super Admin sees all.
 CREATE TABLE IF NOT EXISTS complaints (
@@ -239,6 +250,10 @@ BEGIN
   IF p_status = 'active' AND NOT EXISTS (SELECT 1 FROM localities WHERE franchise_id = p_id) THEN
     RAISE EXCEPTION 'Add at least one service area for this franchise before activating it' USING ERRCODE = '55000';
   END IF;
+  -- 📍 orders reach a city only through its centre + range (geo.sql)
+  IF p_status = 'active' AND (SELECT center_lat FROM franchises WHERE id = p_id) IS NULL THEN
+    RAISE EXCEPTION 'Set the centre of the city on the map (Edit franchise) before activating it' USING ERRCODE = '55000';
+  END IF;
   UPDATE franchises SET status = p_status, status_reason = nullif(trim(coalesce(p_reason, '')), ''), updated_at = now() WHERE id = p_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Franchise not found' USING ERRCODE = 'P0002';
@@ -337,12 +352,13 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     'completed',        (SELECT count(*) FROM o WHERE status = 'delivered'),
     'cancelled',        (SELECT count(*) FROM o WHERE status = 'cancelled'),
     'pending',          (SELECT count(*) FROM o WHERE status IN ('placed', 'assigned', 'picked_up')),
-    'revenue',          (SELECT coalesce(sum(total + coalesce(bill_amount, 0)), 0) FROM o WHERE status = 'delivered'),
+    -- total = items (or the shop bill, once uploaded) + delivery charge: the bill is already inside it
+    'revenue',          (SELECT coalesce(sum(total), 0) FROM o WHERE status = 'delivered'),
     'delivery_charges', (SELECT coalesce(sum(delivery_fee), 0) FROM o WHERE status = 'delivered'),
-    'revenue_today',    (SELECT coalesce(sum(total + coalesce(bill_amount, 0)), 0) FROM orders
+    'revenue_today',    (SELECT coalesce(sum(total), 0) FROM orders
                           WHERE status = 'delivered' AND (p_franchise IS NULL OR franchise_id = p_franchise)
                             AND (delivered_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date),
-    'revenue_month',    (SELECT coalesce(sum(total + coalesce(bill_amount, 0)), 0) FROM orders
+    'revenue_month',    (SELECT coalesce(sum(total), 0) FROM orders
                           WHERE status = 'delivered' AND (p_franchise IS NULL OR franchise_id = p_franchise)
                             AND date_trunc('month', delivered_at AT TIME ZONE 'Asia/Kolkata') = date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata')),
     'rating',           (SELECT round(avg(r.stars), 1) FROM order_ratings r JOIN orders x ON x.id = r.order_id
@@ -500,7 +516,11 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
            'franchise_id', f.id, 'franchise_code', f.code, 'franchise_name', f.name, 'city', f.city,
            'service_id', r.service_id, 'service_name', s.name, 'product_id', r.product_id, 'product_name', p.name,
            'name', r.name, 'category_name', c.name, 'unit', r.unit, 'details', r.details, 'admin_note', r.admin_note,
-           'requested_by', u.full_name, 'is_new', (r.kind = 'service' AND r.name IS NOT NULL) OR (r.kind = 'product' AND r.name IS NOT NULL))
+           'requested_by', u.full_name, 'is_new', (r.kind = 'service' AND r.name IS NOT NULL) OR (r.kind = 'product' AND r.name IS NOT NULL),
+           -- 🗺️ area requests: where it is, town or village (band), the area to switch off / the area that was made
+           'area_lat', r.area_lat, 'area_lng', r.area_lng, 'area_pincode', r.area_pincode, 'village_band', r.village_band,
+           'locality_id', r.locality_id, 'locality_name', (SELECT name FROM localities WHERE id = r.locality_id),
+           'km_from_center', CASE WHEN r.area_lat IS NOT NULL AND f.center_lat IS NOT NULL THEN fn_distance_km(f.center_lat, f.center_lng, r.area_lat, r.area_lng) END)
          ORDER BY (r.status = 'pending') DESC, r.created_at DESC), '[]'::jsonb)
     FROM catalog_requests r
     JOIN franchises f ON f.id = r.franchise_id

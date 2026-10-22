@@ -63,6 +63,8 @@ export default function AgentHome() {
     load().catch((e) => toast(e.message, 'error'));
   }, [load, toast]);
   usePoll(() => load().catch(() => {}), 8000, online || active.length > 0);
+  // 📍 inside / outside the franchise's service range follows the agent's GPS: refresh it while online
+  usePoll(() => reload().catch?.(() => {}), 30000, online);
   // First GPS fix just reached the server: refresh so distances use the real position right away.
   const gpsOn = location.status === 'on';
   useEffect(() => {
@@ -116,6 +118,12 @@ export default function AgentHome() {
       </section>
 
       {online && <LocationStatus location={location} />}
+      {online && me.zone && !me.zone.inside && (
+        <div className="zone-out" role="alert">
+          📍 <b>You are outside the {me.zone.city} service zone</b>
+          {me.zone.km != null && ` — ${Number(me.zone.km)} km from the centre`}. Come within {Number(me.zone.radius_km)} km to get orders.
+        </div>
+      )}
 
       <div className="area-row">
         <label>
@@ -147,7 +155,9 @@ export default function AgentHome() {
           <h3 className="agent-h3">Orders near you <span className="muted">({available.length})</span></h3>
           {!available.length && (
             <div className="agent-empty">
-              🕐 No open {(me.agent.skill_list || []).map((s) => s.name).join(' / ')} orders right now. New orders show up here automatically.
+              {me.zone && !me.zone.inside
+                ? `📍 Orders show up here again when you are back within ${Number(me.zone.radius_km)} km of ${me.zone.city}.`
+                : `🕐 No open ${(me.agent.skill_list || []).map((s) => s.name).join(' / ')} orders right now. New orders show up here automatically.`}
             </div>
           )}
           {available.map((o) => (
@@ -158,7 +168,7 @@ export default function AgentHome() {
                   <b>{o.locality_name}{o.pincode && ` · ${o.pincode}`}</b>
                   <small className="muted">#{o.id} · {o.kind === 'service' ? 'Service visit' : `${o.item_count} item${o.item_count > 1 ? 's' : ''}`} · {time(o.created_at)}</small>
                   <span className="skill-chip small">{o.skill_icon} {o.skill_name}</span>
-                  {o.instant && <span className="instant-chip">⏱️ Deliver {(o.slot || "within 15 min").replace(/^Now — /, "")}</span>}
+                  {o.instant && <span className="instant-chip">⏱️ Deliver {(o.slot || "within 10 min").replace(/^Now — /, "")}</span>}
                   {o.deliver_on && <span className="instant-chip village-chip">🏡 Village · deliver {o.slot}</span>}
                 </div>
                 {!talk(o) && o.skill_code !== 'our_service_employees' && <span className="earn">+{rupees(s.pay_per_order)}</span>}

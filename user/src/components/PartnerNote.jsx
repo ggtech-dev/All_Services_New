@@ -1,17 +1,17 @@
-// 🤝 For "price on discussion" services (plumber, electrician, cleaning, events, cars…): we only pass the booking to an
-// independent local partner. The customer and the partner talk and agree the price themselves.
+// 🤝 For "price on discussion" services (plumber, electrician, mechanic, salon, tuition, events, cars…): we only connect
+// the customer to an independent local service provider. The service charge is agreed between them directly.
+// (each sentence is one text, so the Telugu / Hindi dictionary can translate it whole)
 export default function PartnerNote({ compact = false }) {
   return (
     <div className={`partner-note ${compact ? 'compact' : ''}`} role="note">
-      <b>🤝 Independent local partners</b>
+      <b>🤝 We connect you to local service providers</b>
+      <p className="partner-note-key">Service charges are not fixed by us.</p>
       <p>
-        We only pass your booking to a nearby partner. Once a partner accepts, you see their phone number — call them and
-        fix the price and work details directly with them.
+        After a nearby service provider (plumber, electrician, mechanic…) accepts your booking, you see their phone number. Talk to them directly, agree the service charge and the work, and pay them directly.
       </p>
       {!compact && (
         <p className="partner-note-legal">
-          All Services (GG Tech Software Solutions) does not set, collect or guarantee these prices, and is not responsible
-          for rates, bargaining or the work done by partners.
+          All Services (GG Tech Software Solutions) only connects you to the provider. We do not set, collect or guarantee service charges, and are not responsible for rates, bargaining or the work done by providers.
         </p>
       )}
     </div>

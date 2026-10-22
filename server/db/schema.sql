@@ -357,6 +357,13 @@ ALTER TABLE franchises ADD COLUMN IF NOT EXISTS village_fee_near NUMERIC(10,2) N
 ALTER TABLE franchises ADD COLUMN IF NOT EXISTS village_fee_far  NUMERIC(10,2) NOT NULL DEFAULT 200 CHECK (village_fee_far >= 0);
 ALTER TABLE services   ADD COLUMN IF NOT EXISTS is_village   BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE orders     ADD COLUMN IF NOT EXISTS deliver_on   DATE;   -- next-day (village) orders: the delivery day
+-- 🎉 launch offer: this order's delivery charge was waived (only these use up the "first N deliveries free" offer)
+ALTER TABLE orders     ADD COLUMN IF NOT EXISTS free_delivery BOOLEAN NOT NULL DEFAULT false;
+-- 📍 where each franchise serves: a centre point (set by HQ on the map) and a range in km. An order goes to the
+-- nearest active franchise whose range covers the customer's location; agents get orders only inside it (geo.sql).
+ALTER TABLE franchises ADD COLUMN IF NOT EXISTS center_lat NUMERIC(9,6);
+ALTER TABLE franchises ADD COLUMN IF NOT EXISTS center_lng NUMERIC(9,6);
+ALTER TABLE franchises ADD COLUMN IF NOT EXISTS radius_km  NUMERIC(5,1) NOT NULL DEFAULT 25 CHECK (radius_km BETWEEN 1 AND 100);
 
 -- 🛠️ Shop For Me (2026-10-20): at most this many own-list items per order, and above this shop bill the customer pays
 -- the shop directly by UPI (the agent never carries big cash). NULL = no limit.

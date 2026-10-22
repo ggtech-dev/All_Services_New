@@ -60,7 +60,7 @@ export default function Category() {
             <div className="service-body">
               <h3>{s.name}</h3>
               <div className="service-meta">
-                <span className="price">{priceTalk(s) ? '💬 Price: talk to partner' : s.price_on_bill ? (s.product_count > 0 ? 'Market price' : 'As per shop bill') : formatPrice(s.base_price, s.price_unit)}</span>
+                <span className="price">{priceTalk(s) ? '💬 Service charge: talk to provider' : s.price_on_bill ? (s.product_count > 0 ? 'Market price' : 'As per shop bill') : formatPrice(s.base_price, s.price_unit)}</span>
                 <span className="eta">{s.window_from != null ? `🕕 ${windowLabel(s.window_from, s.window_to)}` : `⏱ ${formatEta(s.eta_minutes)}`}</span>
               </div>
               {s.type_count > 0 ? (

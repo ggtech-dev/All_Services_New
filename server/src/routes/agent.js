@@ -160,7 +160,9 @@ router.get('/me', h(async (req, res) => {
     ),
     query("SELECT fn_agent_stats($1) || jsonb_build_object('pay_per_order', fn_setting_num('agent_pay_per_order', 25), 'rating', fn_agent_rating($1)) AS s", [req.user.id]),
   ]);
-  res.json({ agent: agent[0], stats: stats[0].s });
+  // 📍 inside / outside their franchise's service range (geo.sql) — the app shows a banner when outside
+  const { rows: zone } = await query('SELECT fn_agent_zone($1) AS z', [req.user.id]);
+  res.json({ agent: agent[0], stats: stats[0].s, zone: zone[0].z });
 }));
 
 // body: { lat, lng, accuracy } — sent every ~10 s by the agent app while online.
@@ -203,6 +205,8 @@ router.get('/available', h(async (req, res) => {
       WHERE o.status = 'placed' AND o.agent_id IS NULL
         AND o.skill_code = ANY ((SELECT skills FROM agents WHERE user_id = $1)::text[])
         AND fn_agent_may_take($1, o.id) -- subscription-only services: subscribed agents only
+        AND now() < fn_order_due_at(o) + interval '24 hours' -- ⏰ long overdue: only the admin handles it (overdue.sql)
+        AND fn_agent_in_zone($1) -- 📍 only while inside their franchise's range (geo.sql)
       ORDER BY distance_km NULLS LAST, o.created_at
       LIMIT 50`,
     [req.user.id]
@@ -211,6 +215,11 @@ router.get('/available', h(async (req, res) => {
 }));
 
 router.post('/orders/:id/accept', h(async (req, res) => {
+  const { rows: zone } = await query('SELECT fn_agent_zone($1) AS z', [req.user.id]);
+  const z = zone[0]?.z;
+  if (z && !z.inside) {
+    return res.status(409).json({ error: `You are outside the ${z.city} service zone${z.km != null ? ` (${z.km} km from the centre)` : ''}. Come within ${Number(z.radius_km)} km to take orders.` });
+  }
   await asActor(req.user.id, (db) => db.query('SELECT fn_agent_accept_order($1,$2)', [req.user.id, Number(req.params.id)]));
   notifyCustomer(Number(req.params.id), 'assigned');
   res.json(await loadOrder(Number(req.params.id)));

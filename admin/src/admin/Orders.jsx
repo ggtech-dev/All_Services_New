@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
-import { Modal, useLoad, useToast } from './ui.jsx';
+import { Modal, ViewOnlyNote, useLoad, useStaff, useToast } from './ui.jsx';
 import MapView, { secondsAgo } from '../components/MapView.jsx';
 import { AdminShopBill } from '../components/ShopBill.jsx';
 import OrderExtras from '../components/OrderExtras.jsx';
@@ -15,6 +15,7 @@ import { ACTIVE, STATUS, StatusBadge, VEHICLES, rupees, statusLabel, time, usePo
 
 const TABS = [
   ['active', 'Active'],
+  ['overdue', '⏰ Overdue'],
   ['placed', 'Waiting for agent'],
   ['assigned', 'Assigned'],
   ['picked_up', 'On the way'],
@@ -25,7 +26,9 @@ const TABS = [
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
-  const [filter, setFilter] = useState({ status: 'active', q: '', date: '', skill: params.get('skill') || '' });
+  // ?status= from the dashboard tiles ("Waiting for an agent" → placed)
+  const [filter, setFilter] = useState({ status: TABS.some(([k]) => k === params.get('status')) ? params.get('status') : 'active', q: '', date: '', skill: params.get('skill') || '' });
+  const { base } = useStaff();
   const types = useLoad(() => api('/service-types'));
   const [openId, setOpenId] = useState(params.get('open') ? Number(params.get('open')) : null);
   const agent = params.get('agent');
@@ -64,10 +67,16 @@ export default function Orders() {
         </div>
       )}
 
+      {s?.overdue > 0 && filter.status !== 'overdue' && (
+        <button className="overdue-alert" onClick={() => setFilter({ ...filter, status: 'overdue' })}>
+          ⏰ <b>{s.overdue} order{s.overdue > 1 ? 's are' : ' is'} overdue</b> — not taken or not finished in time. Call the customer, then assign an agent or cancel. <u>Show them</u>
+        </button>
+      )}
+
       {s?.waiting_no_agent > 0 && (
         <div className="gap-alert">
           ⚠️ {s.waiting_no_agent} waiting order{s.waiting_no_agent > 1 ? 's have' : ' has'} no active agent of the right type.
-          <Link to="/admin/service-types"> See agent types</Link> to add or assign agents.
+          <Link to={`${base}/service-types`}> See agent types</Link> to add or assign agents.
         </div>
       )}
 
@@ -84,6 +93,7 @@ export default function Orders() {
             <button key={k} role="tab" aria-selected={filter.status === k} className={filter.status === k ? 'active' : ''} onClick={() => setFilter({ ...filter, status: k })}>
               {label}
               {k === 'placed' && s?.waiting > 0 && <span className="count alert-count">{s.waiting}</span>}
+              {k === 'overdue' && s?.overdue > 0 && <span className="count alert-count">{s.overdue}</span>}
             </button>
           ))}
         </div>
@@ -103,7 +113,7 @@ export default function Orders() {
             </thead>
             <tbody>
               {list.data?.map((o) => (
-                <tr key={o.id} className={`clickable ${o.status === 'placed' ? 'row-waiting' : ''}`} onClick={() => setOpenId(o.id)}>
+                <tr key={o.id} className={`clickable ${o.overdue ? 'row-overdue' : o.status === 'placed' ? 'row-waiting' : ''}`} onClick={() => setOpenId(o.id)}>
                   <td className="nowrap"><b>#{o.id}</b><div className="muted small">{when(o.created_at)}</div></td>
                   <td>
                     <b>{o.contact_name}</b>
@@ -112,7 +122,7 @@ export default function Orders() {
                   <td className="summary-cell">{o.summary}</td>
                   <td className="nowrap"><span className="skill-chip small">{o.skill_icon} {o.skill_name}</span></td>
                   <td className="nowrap"><b>{rupees(o.total)}</b></td>
-                  <td><StatusBadge status={o.status} kind={o.kind} /></td>
+                  <td><StatusBadge status={o.status} kind={o.kind} />{o.overdue && <OverdueBadge kind={o.overdue} />}</td>
                   <td>{o.agent_name ? <><b>{o.agent_name}</b><div className="muted small">{o.agent_phone}</div></> : <span className="muted">—</span>}</td>
                   <td><button className="btn btn-ghost btn-sm">View</button></td>
                 </tr>
@@ -120,7 +130,7 @@ export default function Orders() {
             </tbody>
           </table>
           {list.loading && !list.data && <div className="center-block"><div className="spinner" /></div>}
-          {list.data && !list.data.length && <p className="empty">No orders here yet. New customer orders appear automatically.</p>}
+          {list.data && !list.data.length && <p className="empty">{filter.status === 'overdue' ? 'No overdue orders 🎉 Everything is on time.' : 'No orders here yet. New customer orders appear automatically.'}</p>}
         </div>
         {list.data && <div className="table-foot muted">{list.data.length} orders · refreshes every 15 seconds</div>}
       </section>
@@ -128,6 +138,11 @@ export default function Orders() {
       {openId && <OrderDetail id={openId} onClose={() => setOpenId(null)} onChanged={refresh} />}
     </div>
   );
+}
+
+// ⏰ an open order nobody took (or finished) in time — server/db/overdue.sql
+function OverdueBadge({ kind }) {
+  return <span className="overdue-badge" title={kind === 'not_taken' ? 'No agent took it in time' : 'Taken, but not finished in time'}>⏰ Overdue{kind === 'not_delivered' ? ' · not done' : ''}</span>;
 }
 
 function OrderLiveMap({ orderId, icon }) {
@@ -152,6 +167,7 @@ function OrderDetail({ id, onClose, onChanged }) {
   const toast = useToast();
   const [order, setOrder] = useState(null);
   const settings = useSettings();
+  const { hq, base } = useStaff();
   const [agentId, setAgentId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -177,8 +193,9 @@ function OrderDetail({ id, onClose, onChanged }) {
 
   if (!order) return <Modal title={`Order #${id}`} onClose={onClose} wide><div className="center-block"><div className="spinner" /></div></Modal>;
 
-  const canAssign = ['placed', 'assigned'].includes(order.status);
-  const canCancel = ACTIVE.includes(order.status);
+  // HQ watches: only the city's franchise admin assigns or cancels
+  const canAssign = !hq && ['placed', 'assigned'].includes(order.status);
+  const canCancel = !hq && ACTIVE.includes(order.status);
   const stamps = [
     ['Placed', order.created_at], ['Assigned', order.assigned_at], ['Picked up', order.picked_up_at],
     [order.kind === 'service' ? 'Completed' : 'Delivered', order.delivered_at], ['Cancelled', order.cancelled_at],
@@ -192,13 +209,22 @@ function OrderDetail({ id, onClose, onChanged }) {
           <span className="skill-chip small">{order.skill_icon} {order.skill_name}</span>
           <span className="muted small">{stamps.map(([l, t]) => `${l} ${time(t)}`).join(' · ')}</span>
           {order.otp_required && ACTIVE.includes(order.status) && <span className="od-otp" title="Customer's delivery OTP">OTP {order.delivery_otp}</span>}
+          {order.overdue && <OverdueBadge kind={order.overdue} />}
         </div>
+        {order.overdue && (
+          <p className="overdue-note">
+            ⏰ Was due by {when(order.due_at)} — {order.overdue === 'not_taken' ? 'no agent took it.' : 'the agent has not finished it.'}
+            {!hq && ' Call the customer, then assign an agent or cancel with a reason.'}
+            {order.overdue === 'not_taken' && ' Agents stop seeing it 24 hours after it was due.'}
+          </p>
+        )}
+        {hq && <ViewOnlyNote what="orders" />}
 
         <div className="od-grid">
           <section>
             <h4>Customer</h4>
             <p><b>{order.contact_name}</b> · <a href={`tel:${order.contact_phone}`}>{order.contact_phone}</a></p>
-            <p className="muted small">Account @{order.customer_username} · <Link to={`/admin/orders?customer=${order.customer_id}`} onClick={onClose}>all their orders</Link></p>
+            <p className="muted small">Account @{order.customer_username} · <Link to={`${base}/orders?customer=${order.customer_id}`} onClick={onClose}>all their orders</Link></p>
             <h4>Address</h4>
             <p className="small">{order.address_line}{order.landmark && `, ${order.landmark}`}<br />{order.locality_name}{order.pincode && ` – ${order.pincode}`}</p>
             {order.slot && <p className="small">🕒 {order.slot}</p>}
@@ -251,7 +277,7 @@ function OrderDetail({ id, onClose, onChanged }) {
             <p className="muted">Not assigned yet — {order.skill_name} agents near {order.locality_name} can see this order.</p>
           )}
           {canAssign && !order.candidates.length && (
-            <p className="gap-alert small">No active {order.skill_name} agents. <Link to="/admin/agents" onClick={onClose}>Add one</Link> or give an agent this type of work.</p>
+            <p className="gap-alert small">No active {order.skill_name} agents. <Link to={`${base}/agents`} onClick={onClose}>Add one</Link> or give an agent this type of work.</p>
           )}
           {canAssign && order.candidates.length > 0 && (
             <div className="assign-row">

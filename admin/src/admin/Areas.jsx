@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { Modal, Switch, useLoad, useToast } from './ui.jsx';
+import { useAskReason } from '../components/AskReason.jsx';
 import MapView from '../components/LazyMap.jsx';
 import { useAuth } from '../auth.jsx';
 import { getScope } from '../scope.js';
@@ -8,7 +9,8 @@ import { getScope } from '../scope.js';
 // Service areas (localities) customers choose at checkout; also used to find the nearest agent.
 // Areas are never deleted — old orders point to them — they are switched off instead.
 // 🏡 Villages (within 15 km of town) are areas too: only 🏡 Village Needs delivers there (next day, our own staff), with the
-// village charge of their distance band (up to 10 km / 10–15 km), set by the franchise admin at the top of this page.
+// village charge of their distance band (up to 10 km / 10–15 km). HQ sets areas, villages and charges; a franchise admin
+// asks HQ for a new one (or to switch one off) from this page — it appears in Requests to HQ.
 
 // straight-line km between two points (a hint — road distance is a bit more)
 const kmBetween = (a, b) => {
@@ -20,11 +22,14 @@ export default function Areas() {
   const toast = useToast();
   const list = useLoad(() => api('/admin/localities'));
   const { user } = useAuth();
+  // 🗺️ HQ sets up areas and villages; a franchise admin sees them and asks HQ for changes (Requests to HQ)
   const hq = user.role === 'superadmin';
   // HQ: which franchise (city) a new area belongs to
   const franchises = useLoad(() => (hq ? api('/super/franchise-options') : Promise.resolve([])));
   const [editing, setEditing] = useState(null);
+  const [asking, setAsking] = useState(false);
   const [showOff, setShowOff] = useState(false);
+  const [askReason, reasonBox] = useAskReason();
 
   const areas = list.data || [];
   const towns = areas.filter((a) => a.is_active && !a.is_village);
@@ -41,15 +46,27 @@ export default function Areas() {
       toast(e.message, 'error');
     }
   };
+  const askOff = async (a) => {
+    const details = await askReason({ title: `Ask HQ to switch off ${a.name}?`, text: 'Customers can no longer choose it once HQ approves. Old orders keep it.', required: true, okText: 'Send to HQ', placeholder: 'e.g. We have no agents there any more' });
+    if (!details) return;
+    try {
+      await api('/franchise/requests', { method: 'POST', body: { kind: 'area_off', locality_id: a.id, details } });
+      toast('Sent to HQ — see Requests to HQ');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
 
   return (
     <div className="stack">
       <div className="toolbar">
         <p className="muted toolbar-note">
           Customers pick one of these areas at checkout. Switched-off areas are hidden from customers (old orders keep them).
-          Tap an area's pin on the map to edit it.
+          {hq ? ' Tap an area\'s pin on the map to edit it.' : ' Areas and villages are set by HQ — need a new one? Ask HQ.'}
         </p>
-        <button className="btn btn-primary" onClick={() => setEditing({ name: '', pincode: '', lat: null, lng: null, is_active: true })}>➕ Add area</button>
+        {hq
+          ? <button className="btn btn-primary" onClick={() => setEditing({ name: '', pincode: '', lat: null, lng: null, is_active: true })}>➕ Add area / village</button>
+          : <button className="btn btn-primary" onClick={() => setAsking(true)}>📝 Ask HQ for a new area / village</button>}
       </div>
 
       <VillageFees />
@@ -60,7 +77,7 @@ export default function Areas() {
           fitKey={`${list.data ? 'ok' : ''}-${showOff}`}
           markers={shown.map((a) => ({
             id: a.id, lat: Number(a.lat), lng: Number(a.lng), emoji: a.is_village ? '🏡' : '📍', color: !a.is_active ? '#94a3b8' : a.is_village ? '#65a30d' : '#4f46e5',
-            label: `${a.name}${a.is_active ? '' : ' (off)'}`, onClick: () => setEditing(a),
+            label: `${a.name}${a.is_active ? '' : ' (off)'}`, onClick: hq ? () => setEditing(a) : undefined,
           }))}
         />
       </section>
@@ -84,8 +101,11 @@ export default function Areas() {
                   <td>{a.pincode || <span className="muted">—</span>}</td>
                   <td>{a.orders}</td>
                   <td>{a.agents}</td>
-                  <td><Switch checked={a.is_active} onChange={() => toggle(a)} label="" /></td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={() => setEditing(a)}>Edit</button></td>
+                  <td>{hq ? <Switch checked={a.is_active} onChange={() => toggle(a)} label="" /> : (a.is_active ? '✅' : <span className="muted">off</span>)}</td>
+                  <td className="nowrap">
+                    {hq ? <button className="btn btn-ghost btn-sm" onClick={() => setEditing(a)}>Edit</button>
+                      : a.is_active && <button className="btn btn-ghost btn-sm" onClick={() => askOff(a)}>Ask to switch off</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -94,6 +114,7 @@ export default function Areas() {
           {list.error && <div className="alert">{list.error}</div>}
         </div>
       </section>
+      {reasonBox}
 
       {editing && (
         <AreaForm
@@ -108,17 +129,30 @@ export default function Areas() {
           }}
         />
       )}
+      {asking && (
+        <AreaForm
+          request
+          area={{ name: '', pincode: '', lat: null, lng: null, is_active: true }}
+          townCenter={townCenter}
+          onClose={() => setAsking(false)}
+          onSaved={() => {
+            setAsking(false);
+            toast('Sent to HQ — you will see the answer in Requests to HQ');
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function AreaForm({ area, franchises, townCenter, onClose, onSaved }) {
+// request: a franchise admin asking HQ for a new area / village (Requests to HQ) instead of saving it
+function AreaForm({ area, franchises, townCenter, onClose, onSaved, request = false }) {
   const isNew = !area.id;
   const [form, setForm] = useState({
     name: area.name, pincode: area.pincode || '', is_active: area.is_active,
     is_village: !!area.is_village, village_band: area.village_band ? String(area.village_band) : '',
     franchise_id: String(area.franchise_id ?? getScope() ?? ''),
-    lat: area.lat == null ? null : Number(area.lat), lng: area.lng == null ? null : Number(area.lng),
+    lat: area.lat == null ? null : Number(area.lat), lng: area.lng == null ? null : Number(area.lng), details: '',
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -147,6 +181,11 @@ function AreaForm({ area, franchises, townCenter, onClose, onSaved }) {
       if (form.is_village && !form.village_band) throw new Error('Choose how far the village is: up to 10 km, or 10–15 km');
       const body = { ...form, name: form.name.trim(), pincode: form.pincode.trim(), franchise_id: form.franchise_id || null,
         village_band: form.is_village ? Number(form.village_band) : null };
+      if (request) {
+        await api('/franchise/requests', { method: 'POST', body: { kind: 'area', name: body.name, pincode: body.pincode, lat: body.lat, lng: body.lng,
+          village_band: body.village_band, details: form.details.trim() } });
+        return onSaved(null, true);
+      }
       const a = await api(isNew ? '/admin/localities' : `/admin/localities/${area.id}`, { method: isNew ? 'POST' : 'PUT', body });
       onSaved(a, isNew);
     } catch (err) {
@@ -157,13 +196,13 @@ function AreaForm({ area, franchises, townCenter, onClose, onSaved }) {
 
   return (
     <Modal
-      title={isNew ? 'Add area' : `Edit ${area.name}`}
+      title={request ? 'Ask HQ for a new area or village' : isNew ? 'Add area' : `Edit ${area.name}`}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" form="area-form" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          <button className="btn btn-primary" form="area-form" disabled={busy}>{busy ? 'Saving…' : request ? 'Send to HQ' : 'Save'}</button>
         </>
       }
     >
@@ -218,14 +257,18 @@ function AreaForm({ area, franchises, townCenter, onClose, onSaved }) {
           markers={hasPin ? [{ id: 'pin', lat: form.lat, lng: form.lng, emoji: '📍', color: '#4f46e5' }] : []}
           onMapClick={({ lat, lng }) => setForm((f) => ({ ...f, lat, lng }))}
         />
-        <Switch checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} label="Customers can choose this area" />
+        {request ? (
+          <label>Why do you need it? (optional)
+            <input value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} maxLength={300} placeholder="e.g. New colony, many customers asking" />
+          </label>
+        ) : <Switch checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} label="Customers can choose this area" />}
         {error && <div className="alert">{error}</div>}
       </form>
     </Modal>
   );
 }
 
-// 🏡 The two village delivery charges of this franchise (franchise admin). HQ sees each city's charges.
+// 🏡 The two village delivery charges of a city — set by HQ (city chosen at the top); the franchise admin sees them.
 function VillageFees() {
   const toast = useToast();
   const data = useLoad(() => api('/admin/village-fees'));
@@ -262,7 +305,7 @@ function VillageFees() {
       ) : (
         <ul className="village-fee-list">
           {d.franchises.map((x) => <li key={x.id}><b>{x.city}</b>: up to 10 km ₹{Number(x.village_fee_near)} · 10–15 km ₹{Number(x.village_fee_far)}</li>)}
-          {!d.can_edit && <li className="muted small">Set by each city's franchise admin.</li>}
+          {!d.can_edit && <li className="muted small">{d.franchises.length > 1 ? 'Choose a city at the top to change its charges.' : 'Set by HQ — ask HQ to change them.'}</li>}
         </ul>
       )}
     </section>

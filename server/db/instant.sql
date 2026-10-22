@@ -25,7 +25,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     'base_fee', s.delivery_fee,
     'delivery_fee', fn_delivery_fee_for(p_customer_id, s.delivery_fee),
     'free_left', greatest(0, fn_setting_num('free_delivery_orders', 3)
-                   - (SELECT count(*) FROM orders WHERE customer_id = p_customer_id AND status <> 'cancelled'))::int,
+                   - fn_free_deliveries_used(p_customer_id))::int,
     'on_bill', true,
     'instant', true,
     'eta_minutes', s.eta_minutes,

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Modal, timeAgo, useLoad, useToast } from './ui.jsx';
+import { Modal, ViewOnlyNote, timeAgo, useLoad, useToast } from './ui.jsx';
 
 // Customer complaints. A franchise sees its own; the Super Admin sees all (or the franchise chosen at the top).
 const STATUS = {
@@ -15,7 +15,8 @@ const TABS = [['', 'All'], ['open', 'Open'], ['in_progress', 'Working on it'], [
 
 export default function Complaints() {
   const { user } = useAuth();
-  const base = user.role === 'superadmin' ? '/super' : '/admin';
+  const hq = user.role === 'superadmin'; // HQ reads complaints and replies; the city's admin answers them
+  const base = hq ? '/super' : '/admin';
   const [tab, setTab] = useState('');
   const list = useLoad(() => api(`/franchise/complaints${tab ? `?status=${tab}` : ''}`), [tab]);
   const [open, setOpen] = useState(null);
@@ -23,9 +24,11 @@ export default function Complaints() {
 
   return (
     <div className="stack">
-      <p className="muted toolbar-note">
-        Problems customers report from their order page or account. Call them, reply here (they see your reply in the app) and mark it resolved.
-      </p>
+      {hq ? <ViewOnlyNote what="complaints (calling and replying to the customer)" /> : (
+        <p className="muted toolbar-note">
+          Problems customers report from their order page or account. Call them, reply here (they see your reply in the app) and mark it resolved.
+        </p>
+      )}
       <div className="tabs scroll-tabs" role="tablist">
         {TABS.map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>
@@ -47,7 +50,7 @@ export default function Complaints() {
                       {c.agent_name && <div className="muted small">Agent: {c.agent_name}</div>}</td>
                     <td><span className="status-badge" style={{ '--c': color }}>{label}</span></td>
                     <td className="muted small nowrap">{timeAgo(c.created_at)}</td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={() => setOpen(c)}>{c.status === 'open' || c.status === 'in_progress' ? 'Reply' : 'View'}</button></td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => setOpen(c)}>{!hq && (c.status === 'open' || c.status === 'in_progress') ? 'Reply' : 'View'}</button></td>
                   </tr>
                 );
               })}
@@ -58,8 +61,24 @@ export default function Complaints() {
           {list.error && <div className="alert">{list.error}</div>}
         </div>
       </section>
-      {open && <ComplaintReply complaint={open} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); list.reload(); }} />}
+      {open && (hq ? <ComplaintView complaint={open} onClose={() => setOpen(null)} />
+        : <ComplaintReply complaint={open} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); list.reload(); }} />)}
     </div>
+  );
+}
+
+// HQ: the complaint and the city's reply, read only
+function ComplaintView({ complaint, onClose }) {
+  const [label] = STATUS[complaint.status] || [complaint.status];
+  return (
+    <Modal title={complaint.subject} onClose={onClose} footer={<button className="btn btn-ghost" onClick={onClose}>Close</button>}>
+      <div className="stack">
+        <p className="complaint-msg">“{complaint.message}”</p>
+        <p className="muted small">{complaint.customer_name} · {complaint.customer_phone}{complaint.order_id ? ` · order #${complaint.order_id}` : ''}{complaint.city ? ` · ${complaint.city}` : ''}</p>
+        <p><b>Status:</b> {label}</p>
+        <p><b>City's reply:</b> {complaint.reply || <span className="muted">No reply yet</span>}</p>
+      </div>
+    </Modal>
   );
 }
 

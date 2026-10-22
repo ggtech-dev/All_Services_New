@@ -21,9 +21,9 @@ const Orders = lazy(() => import('./admin/Orders.jsx'));
 const Agents = lazy(() => import('./admin/Agents.jsx'));
 const ServiceTypes = lazy(() => import('./admin/ServiceTypes.jsx'));
 const LiveMap = lazy(() => import('./admin/LiveMap.jsx'));
-const Reports = lazy(() => import('./admin/Reports.jsx'));
 const Activity = lazy(() => import('./admin/Activity.jsx'));
 const Areas = lazy(() => import('./admin/Areas.jsx'));
+const PopularAdmin = lazy(() => import('./admin/PopularAdmin.jsx')); // ⭐ popular cards on the home page
 const Shops = lazy(() => import('./admin/Shops.jsx'));
 const Subscriptions = lazy(() => import('./admin/Subscriptions.jsx'));
 const ShareRideAdmin = lazy(() => import('./admin/ShareRideAdmin.jsx'));
@@ -38,7 +38,7 @@ const FranchiseDetail = lazy(() => import('./super/FranchiseDetail.jsx'));
 const SuperAdmins = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Admins })));
 const SuperUsers = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Users })));
 const Payments = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Payments })));
-const PlatformReports = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.PlatformReports })));
+const ReportCenter = lazy(() => import('./super/ReportCenter.jsx')); // 📈 all reports: choose a city, then a report
 
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
 
@@ -59,13 +59,14 @@ const operationsRoutes = (
     <Route path="orders" element={<Orders />} />
     <Route path="agents" element={<Agents />} />
     <Route path="live" element={<LiveMap />} />
-    <Route path="reports" element={<Reports />} />
+    <Route path="reports" element={<ReportCenter />} />
     <Route path="ratings" element={<Ratings />} />
     <Route path="complaints" element={<Complaints />} />
     <Route path="subscriptions" element={<Subscriptions />} />
     <Route path="share-ride" element={<ShareRideAdmin />} />
     <Route path="workers" element={<WorkersAdmin />} />
     <Route path="areas" element={<Areas />} />
+    <Route path="popular" element={<PopularAdmin />} />
     <Route path="shops" element={<Shops />} />
     <Route path="service-types" element={<ServiceTypes />} />
     <Route path="activity" element={<Activity />} />
@@ -80,7 +81,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/super" element={<RoleOnly role="superadmin"><AdminLayout /></RoleOnly>}>
           <Route index element={<SuperDashboard />} />
-          <Route path="platform-reports" element={<PlatformReports />} />
+          <Route path="platform-reports" element={<Navigate to="/super/reports?r=cities" replace />} />
           <Route path="franchises" element={<Franchises />} />
           <Route path="franchises/new" element={<FranchiseForm />} />
           <Route path="franchises/:id" element={<FranchiseDetail />} />

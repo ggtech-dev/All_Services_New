@@ -18,6 +18,7 @@ const LiveMap = lazy(() => import('./admin/LiveMap.jsx'));
 const Reports = lazy(() => import('./admin/Reports.jsx'));
 const Activity = lazy(() => import('./admin/Activity.jsx'));
 const Areas = lazy(() => import('./admin/Areas.jsx'));
+const PopularAdmin = lazy(() => import('./admin/PopularAdmin.jsx')); // ⭐ popular cards on the home page
 const Shops = lazy(() => import('./admin/Shops.jsx'));
 const Subscriptions = lazy(() => import('./admin/Subscriptions.jsx'));
 const ShareRideAdmin = lazy(() => import('./admin/ShareRideAdmin.jsx'));
@@ -51,6 +52,7 @@ const operationsRoutes = (
     <Route path="share-ride" element={<ShareRideAdmin />} />
     <Route path="workers" element={<WorkersAdmin />} />
     <Route path="areas" element={<Areas />} />
+    <Route path="popular" element={<PopularAdmin />} />
     <Route path="shops" element={<Shops />} />
     <Route path="service-types" element={<ServiceTypes />} />
     <Route path="activity" element={<Activity />} />

@@ -19,10 +19,21 @@ router.get('/franchises', async (req, res, next) => {
   }
 });
 
+// ⭐ "Our most popular services" on the home page: the city's photo cards (HQ sets them — popular.sql)
+router.get('/home-popular', async (req, res, next) => {
+  try {
+    const { rows } = await query('SELECT fn_home_popular($1) AS list', [cityOf(req)]);
+    res.json(rows[0].list);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/localities', async (req, res, next) => {
   try {
-    // ?franchise= (agent sign-up) or the customer's city
-    const fr = /^\d{1,9}$/.test(String(req.query.franchise || '')) ? Number(req.query.franchise) : cityOf(req);
+    // ?franchise= (agent sign-up) · ?all=1 (the 📍 location search: every city we serve) · else the customer's city
+    const fr = /^\d{1,9}$/.test(String(req.query.franchise || '')) ? Number(req.query.franchise)
+      : req.query.all === '1' ? null : cityOf(req);
     const { rows } = await query(
       `SELECT l.id, l.name, l.pincode, l.lat::float AS lat, l.lng::float AS lng, l.franchise_id, f.city,
               l.is_village, l.village_band, CASE WHEN l.is_village THEN fn_village_fee(l.id) END AS village_fee
@@ -32,6 +43,29 @@ router.get('/localities', async (req, res, next) => {
       [fr]
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 📍 ?lat&lng → the franchise (city) that serves this spot — the nearest one whose range covers it — with its areas,
+// nearest first. { franchise: null } = we don't deliver there yet (geo.sql).
+router.get('/locate', async (req, res, next) => {
+  try {
+    const n = (v) => (/^-?\d{1,3}(\.\d+)?$/.test(String(v ?? '')) ? Number(v) : null);
+    const lat = n(req.query.lat);
+    const lng = n(req.query.lng);
+    if (lat == null || lng == null) return res.status(400).json({ error: 'Location missing' });
+    const { rows: at } = await query(
+      `SELECT f.id, f.code, f.city, f.radius_km, a.km FROM fn_franchise_at($1, $2) a JOIN franchises f ON f.id = a.franchise_id`, [lat, lng]);
+    if (!at[0]) return res.json({ franchise: null });
+    const { rows: areas } = await query(
+      `SELECT l.id, l.name, l.pincode, l.is_village, l.village_band, fn_distance_km(l.lat, l.lng, $2, $3) AS km,
+              CASE WHEN l.is_village THEN fn_village_fee(l.id) END AS village_fee
+         FROM localities l WHERE l.franchise_id = $1 AND l.is_active ORDER BY 6, l.name`,
+      [at[0].id, lat, lng]
+    );
+    res.json({ franchise: at[0], areas, nearest: areas[0] || null });
   } catch (err) {
     next(err);
   }
@@ -80,6 +114,7 @@ router.get('/credits', async (req, res, next) => {
          UNION ALL SELECT image_credit, name FROM services WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
          UNION ALL SELECT image_credit, name FROM products WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
          UNION ALL SELECT image_credit, name FROM promotions WHERE image_url IS NOT NULL AND image_credit IS NOT NULL
+         UNION ALL SELECT image_credit, title FROM home_popular WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
        ) x WHERE trim(credit) <> '' GROUP BY credit ORDER BY min(name)`
     );
     res.set('Cache-Control', 'public, max-age=3600');
@@ -188,6 +223,37 @@ router.get('/home-cards', async (req, res, next) => {
   }
 });
 
+// 🔍 Home search: ?q=plumber → services (by name, description or category) and items (by name or brand) in the
+// customer's city. Each result says where it opens: a shop page, a booking, or a category with its own page.
+router.get('/search', async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 60);
+    if (q.length < 2) return res.json({ services: [], products: [] });
+    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    // "fast", "quick", "urgent", "10 min"… → ⚡ Instant Delivery first (the only 10-minute service)
+    const fast = /^(instant|fast|quick|urgent|express|now|asap|10 ?min(ute)?s?|in 10 min(ute)?s?)$/i.test(q);
+    const [services, products] = await Promise.all([
+      query(
+        `SELECT s.slug, s.name, s.price_unit, c.slug AS category_slug, c.name AS category_name, s.allows_list,
+                (SELECT count(*) FROM services x WHERE x.parent_id = s.id AND x.is_active)::int AS type_count,
+                (SELECT count(*) FROM products p WHERE p.service_id = ANY (s.id || coalesce(s.source_service_ids, ARRAY[]::int[])) AND p.is_active)::int AS product_count
+           FROM services s JOIN categories c ON c.id = s.category_id
+          WHERE s.is_active AND c.is_active AND s.parent_id IS NULL AND NOT s.home_card AND fn_service_visible($2, s.id)
+            AND (s.name ILIKE $1 OR s.description ILIKE $1 OR c.name ILIKE $1 OR ($3 AND s.skill_code = 'instant'))
+          ORDER BY ($3 AND s.skill_code = 'instant') DESC, (s.name ILIKE $1) DESC, c.sort_order, s.sort_order LIMIT 20`, [like, cityOf(req), fast]),
+      query(
+        `SELECT p.name, p.brand, p.unit, p.price, s.slug AS service_slug, s.name AS service_name, s.price_on_bill
+           FROM products p JOIN services s ON s.id = p.service_id JOIN categories c ON c.id = s.category_id
+          WHERE p.is_active AND s.is_active AND c.is_active AND fn_service_visible($2, s.id)
+            AND ($2::int IS NULL OR fn_product_visible($2, p.id)) AND (p.name ILIKE $1 OR p.brand ILIKE $1)
+          ORDER BY (p.name ILIKE $1) DESC, p.name LIMIT 20`, [like, cityOf(req)]),
+    ]);
+    res.json({ services: services.rows, products: products.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/featured-services', async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -228,7 +294,11 @@ router.get('/services/:slug', async (req, res, next) => {
   try {
     const svc = await query(
       `SELECT s.*, c.slug AS category_slug, c.name AS category_name, c.icon AS category_icon, c.color AS category_color,
-              ps.slug AS parent_slug, ps.name AS parent_name
+              ps.slug AS parent_slug, ps.name AS parent_name,
+              -- services the category page lists (as /categories/:slug): with only one it opens that service directly,
+              -- so the "back" link must go to all categories instead (else it bounces back here)
+              (SELECT count(*) FROM services x WHERE x.category_id = s.category_id AND x.is_active AND x.parent_id IS NULL
+                  AND NOT x.home_card AND fn_service_visible($2, x.id))::int AS category_services
          FROM services s JOIN categories c ON c.id = s.category_id LEFT JOIN services ps ON ps.id = s.parent_id
         WHERE s.slug = $1 AND s.is_active AND c.is_active AND fn_service_visible($2, s.id)`,
       [req.params.slug, cityOf(req)]

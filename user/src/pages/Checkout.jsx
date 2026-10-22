@@ -7,12 +7,8 @@ import { itemNote, useCart } from '../cart.jsx';
 import { qtyLabel, slotLabel } from '../qty.js';
 import { rupees } from '../orderStatus.jsx';
 import MapView from '../components/LazyMap.jsx';
-
-const nearestLocality = (list, lat, lng) =>
-  list.reduce((best, l) => {
-    const d = (l.lat - lat) ** 2 + (l.lng - lng) ** 2;
-    return !best || d < best.d ? { ...l, d } : best;
-  }, null);
+import { setCity, useCity } from '../scope.js';
+import { getPlace, setPlace } from '../place.js';
 
 // Delivery / visit times: "As soon as possible", today's 2-hour windows that are still ahead (starting at least
 // 30 minutes from now), then tomorrow's. Services with a fixed window (vegetables 6–10 AM) use the server's slots.
@@ -76,25 +72,50 @@ export default function Checkout() {
   // "Book again" after a partner cancelled: the form starts with that booking's details; placing cancels the old one
   const prefilled = useRef(false); // fill the form once, so a late reply never overwrites what the customer typed
   const rebookOf = /^\d+$/.test(params.get('rebook') || '') ? Number(params.get('rebook')) : null;
-  const [pin, setPin] = useState(null); // { lat, lng, accuracy } from the phone's GPS
+  // 📍 The delivery location is required: GPS ("Use my current location") or a pin tapped on the map. It decides the
+  // city — the nearest franchise whose range covers it (server: geo.sql) — and the nearest area is chosen for you.
+  const [pin, setPin] = useState(null); // { lat, lng, accuracy? }
   const [pinMsg, setPinMsg] = useState('');
+  const [zone, setZone] = useState(null); // { franchise, areas (nearest first) } for the pin · { franchise: null } = not served
+  const [mapPick, setMapPick] = useState(false);
+  const city = useCity();
 
+  const applyPin = async (p) => {
+    setPin(p);
+    setPinMsg('Checking your location…');
+    try {
+      const z = await api(`/locate?lat=${p.lat}&lng=${p.lng}`);
+      setZone(z);
+      setPinMsg('');
+      if (!z.franchise) return;
+      // the nearest area that fits this order (villages only for 🏡 Village Needs, town areas for shop orders)
+      const fits = z.areas.filter((l) => (village ? l.is_village : kind === 'service' || !l.is_village));
+      setForm((f) => (fits.some((l) => String(l.id) === f.locality_id) ? f
+        : { ...f, locality_id: fits[0] ? String(fits[0].id) : '', pincode: fits[0]?.pincode || f.pincode }));
+      // 📍 the top bar shows this spot from now on
+      const n = z.nearest;
+      setPlace({ area: n?.name || '', locality_id: n?.id || null, city: z.franchise.city, franchise_id: z.franchise.id, village: !!n?.is_village,
+        lat: p.lat, lng: p.lng, accuracy: p.accuracy, gps: true, at: Date.now() });
+    } catch (err) {
+      setPinMsg(err.message);
+    }
+  };
   const pinMyLocation = () => {
-    if (!navigator.geolocation) return setPinMsg('Location is not available on this device');
+    if (!navigator.geolocation) return setPinMsg('Location is not available on this device — tap "Set on map" instead');
     setPinMsg('Finding you…');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const p = { lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6), accuracy: Math.round(pos.coords.accuracy) };
-        setPin(p);
-        setPinMsg('');
-        // Pick the nearest area automatically if the customer hasn't chosen one.
-        const l = nearestLocality(localities, p.lat, p.lng);
-        if (l && !form.locality_id) setForm((f) => ({ ...f, locality_id: String(l.id), pincode: f.pincode || l.pincode || '' }));
-      },
-      () => setPinMsg('Please allow location access, or just fill in the address'),
+      (pos) => applyPin({ lat: +pos.coords.latitude.toFixed(6), lng: +pos.coords.longitude.toFixed(6), accuracy: Math.round(pos.coords.accuracy) }),
+      () => { setPinMsg('Location is blocked — allow it, or tap "Set on map" and tap your place'); setMapPick(true); },
       { enableHighAccuracy: true, timeout: 15000 }
     );
   };
+  // the spot found from the top bar (📍 Detect my location) is the pin to start with; location already allowed on this
+  // phone: find it fresh straight away
+  useEffect(() => {
+    const pl = getPlace();
+    if (pl?.gps && pl.lat && pl.lng) applyPin({ lat: pl.lat, lng: pl.lng, accuracy: pl.accuracy });
+    navigator.permissions?.query({ name: 'geolocation' }).then((s) => s.state === 'granted' && pinMyLocation()).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -118,6 +139,8 @@ export default function Checkout() {
     }
     api('/orders/last-address').then((a) => {
       if (a) setForm({ name: a.contact_name, phone: a.contact_phone, address_line: a.address_line, landmark: a.landmark || '', locality_id: String(a.locality_id), pincode: a.pincode || '' });
+      // first order: the area chosen in the top bar
+      else if (getPlace()?.locality_id) setForm((f) => (f.locality_id ? f : { ...f, locality_id: String(getPlace().locality_id) }));
     }).catch(() => {});
   }, []);
 
@@ -152,16 +175,25 @@ export default function Checkout() {
     if (!windowSlots && !SLOTS[kind].includes(slot)) setSlot(SLOTS[kind][0]);
   }, [windowSlots, slot, kind]);
 
-  // A saved address from an area we no longer serve: ask for the area again.
+  // the areas to choose from: those of the city the location is in (nearest first), until then the app's city
+  const areaList = (zone?.franchise ? zone.areas : localities).filter((l) => (village ? l.is_village : kind === 'service' || !l.is_village));
+  // A saved address from an area we no longer serve (or of another city): ask for the area again.
   useEffect(() => {
-    if (localities.length && form.locality_id && !localities.some((l) => String(l.id) === form.locality_id)) {
+    if (areaList.length && form.locality_id && !areaList.some((l) => String(l.id) === form.locality_id)) {
       setForm((f) => ({ ...f, locality_id: '', pincode: '' }));
     }
-  }, [localities, form.locality_id]);
+  }, [areaList, form.locality_id]);
+  // the location is in another of our cities than the one this cart was filled in
+  const otherCity = zone?.franchise && city && String(zone.franchise.id) !== city ? zone.franchise : null;
+  const moveToCity = () => {
+    cart.clear(); // shops and prices are different in each city
+    setCity(otherCity.id);
+    navigate('/');
+  };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const chooseLocality = (e) => {
-    const l = localities.find((x) => String(x.id) === e.target.value);
+    const l = areaList.find((x) => String(x.id) === e.target.value);
     setForm({ ...form, locality_id: e.target.value, pincode: l?.pincode || form.pincode });
   };
 
@@ -196,6 +228,8 @@ export default function Checkout() {
   const place = async (e) => {
     e.preventDefault();
     setError('');
+    if (!pin) return setError('Please share your delivery location: tap "Use my current location" or "Set on map".');
+    if (zone && !zone.franchise) return setError('Sorry, All Services does not deliver to your location yet.');
     setBusy(true);
     try {
       const body = { contact: { ...form, locality_id: Number(form.locality_id), ...(pin && { lat: pin.lat, lng: pin.lng }) }, slot, notes };
@@ -238,7 +272,7 @@ export default function Checkout() {
         {isVisit && service.parent_slug && <Link to={`/care/${service.parent_slug}`} className="back-link">← {service.parent_name}</Link>}
         <h1>{kind === 'service' ? 'Book service' : instant ? `${village ? '🏡' : '⚡'} ${instant.name}` : 'Checkout'}</h1>
         {rebookOf && <div className="instant-banner rebook-banner">✏️ <span>{`Booking again — change anything you like. Your earlier booking #${rebookOf} is cancelled when you confirm.`}</span></div>}
-        {instant && !village && <div className="instant-banner">⚡ <b>Instant order</b> — your delivery partner starts right away and reaches you in about <b>{quote.eta_minutes || 15} minutes</b>.</div>}
+        {instant && !village && <div className="instant-banner">⚡ <b>Instant order</b> — your delivery partner starts right away and reaches you in about <b>{quote.eta_minutes || 10} minutes</b>.</div>}
         {village && <div className="instant-banner village-banner">🏡 <span><b>Village delivery</b> — same-day delivery is not possible for villages. Choose <b>tomorrow</b> (or a later day) and a time below. Our own team brings it.</span></div>}
 
         <section className="panel form">
@@ -254,19 +288,44 @@ export default function Checkout() {
               <select value={form.locality_id} onChange={chooseLocality} required>
                 <option value="">{village ? 'Choose your village…' : 'Choose your area…'}</option>
                 {/* villages: only for 🏡 Village Needs (with their charge); shop orders go to town areas */}
-                {localities.filter((l) => (village ? l.is_village : kind === 'service' || !l.is_village))
-                  .map((l) => <option key={l.id} value={l.id}>{l.name}{village ? ` — delivery ${rupees(l.village_fee)}` : ''}</option>)}
+                {areaList.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}{l.km != null ? ` · ${Number(l.km)} km` : ''}{village && l.village_fee != null ? ` — delivery ${rupees(l.village_fee)}` : ''}</option>
+                ))}
               </select>
             </label>
             <label>Pincode<input value={form.pincode} onChange={set('pincode')} inputMode="numeric" maxLength={6} placeholder="500072" /></label>
           </div>
           <label>Landmark (optional)<input value={form.landmark} onChange={set('landmark')} placeholder="e.g. Near KPHB metro station" /></label>
           <div className="pin-row">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={pinMyLocation}>📍 {pin ? 'Update my location' : 'Use my current location'}</button>
-            {pin ? <small className="success-text">Exact location pinned ✓ (±{pin.accuracy} m) — the {kind === 'service' ? 'partner' : 'agent'} will navigate right to your door</small>
-              : <small className="muted">{pinMsg || 'Optional: helps the agent find your door'}</small>}
+            <button type="button" className={`btn btn-sm ${pin ? 'btn-ghost' : 'btn-primary'}`} onClick={pinMyLocation}>📍 {pin ? 'Update my location' : 'Use my current location'}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMapPick(!mapPick)}>🗺️ {mapPick ? 'Hide map' : 'Set on map'}</button>
+            {pinMsg ? <small className="muted">{pinMsg}</small>
+              : pin && zone?.franchise ? <small className="success-text">Location pinned ✓{pin.accuracy ? ` (±${pin.accuracy} m)` : ''} — {zone.franchise.city} · the {kind === 'service' ? 'partner' : 'agent'} navigates right to your door</small>
+              : !pin && <small className="pin-required">Required: we deliver only where our team is (within {Number(zone?.franchise?.radius_km || 25)} km of our city).</small>}
           </div>
-          {pin && <MapView markers={[{ id: 'pin', lat: pin.lat, lng: pin.lng, emoji: '🏠', color: '#16a34a', accuracy_m: pin.accuracy }]} fitKey={`${pin.lat},${pin.lng}`} height={180} />}
+          {zone && !zone.franchise && (
+            <div className="alert">📍 Sorry, All Services does not deliver to this location yet. If this pin is wrong, tap <b>Set on map</b> and tap your home.</div>
+          )}
+          {otherCity && (
+            <div className="alert">
+              📍 This location is in our <b>{otherCity.city}</b> service area, but your cart is from another city.{' '}
+              <button type="button" className="btn btn-primary btn-sm" onClick={moveToCity}>Shop in {otherCity.city}</button>
+            </div>
+          )}
+          {(pin || mapPick) && (
+            <>
+              {mapPick && <small className="muted">Tap the map at your home / venue to place the pin.</small>}
+              <MapView
+                markers={[
+                  ...(pin ? [{ id: 'pin', lat: pin.lat, lng: pin.lng, emoji: '🏠', color: '#16a34a', accuracy_m: pin.accuracy }] : []),
+                  ...(!pin ? localities.slice(0, 40).map((l) => ({ id: `a${l.id}`, lat: l.lat, lng: l.lng, emoji: '📍', color: '#94a3b8', label: l.name })) : []),
+                ]}
+                fitKey={pin ? `${pin.lat},${pin.lng}` : 'areas'}
+                height={mapPick ? 260 : 180}
+                onMapClick={mapPick ? (p) => applyPin({ lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6) }) : undefined}
+              />
+            </>
+          )}
         </section>
 
         {isEvent && (

@@ -126,7 +126,10 @@ export default function ServiceShop() {
 
   return (
     <>
-      <Link to={`/category/${service.category_slug}`} className="back-link">← {service.category_name}</Link>
+      {/* a category with one service opens it directly — "back" then goes to all categories, not round in a loop */}
+      {service.category_services > 1
+        ? <Link to={`/category/${service.category_slug}`} className="back-link">← {service.category_name}</Link>
+        : <Link to="/" className="back-link">← All categories</Link>}
       <section className={`shop-header ${isInstant ? (village ? 'village-header' : 'instant-header') : ''}`} style={{ '--accent': service.category_color }}>
         <div className="shop-header-img">
           {isInstant ? <div className="instant-bolt" aria-hidden="true">{village ? '🏡' : '⚡'}</div>

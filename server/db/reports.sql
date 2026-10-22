@@ -80,15 +80,25 @@ BEGIN
            GROUP BY t.code, t.name, t.icon
         ) r), '[]'),
 
+      -- Each order counts once, under its main category (⚡ Instant / 🏡 Village Needs: their own; otherwise the category
+      -- with most lines). Revenue = what the customer paid without the delivery charge — the shop bill once uploaded,
+      -- so Shop For Me and kirana lists are not ₹0 — so categories + delivery charges = the Revenue tile.
       'by_category', coalesce((
         SELECT jsonb_agg(r ORDER BY r.orders DESC) FROM (
-          SELECT c.name, c.icon, count(DISTINCT o.id) AS orders,
-                 coalesce(sum(i.line_total) FILTER (WHERE o.status = 'delivered'), 0) AS revenue
+          SELECT c.name, c.icon, count(*) AS orders,
+                 coalesce(sum(o.total - o.delivery_fee) FILTER (WHERE o.status = 'delivered'), 0) AS revenue
             FROM o
-            JOIN order_items i ON i.order_id = o.id
-            LEFT JOIN products p ON p.id = i.product_id
-            JOIN services s ON s.id = coalesce(i.service_id, p.service_id)
-            JOIN categories c ON c.id = s.category_id
+            JOIN LATERAL (
+              SELECT s.category_id
+                FROM order_items i
+                LEFT JOIN products p ON p.id = i.product_id
+                JOIN services s ON s.id = coalesce(o.via_service_id, i.service_id, p.service_id)
+               WHERE i.order_id = o.id
+               GROUP BY s.category_id
+               ORDER BY count(*) DESC, s.category_id
+               LIMIT 1
+            ) m ON true
+            JOIN categories c ON c.id = m.category_id
            GROUP BY c.id, c.name, c.icon
         ) r), '[]'),
 

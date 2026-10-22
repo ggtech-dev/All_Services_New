@@ -233,7 +233,7 @@ export default function AgentApply() {
   return (
     <div className="apply-page">
       <header className="apply-hero">
-        <Link to="/login" className="brand brand-lg"><span className="brand-logo">AS</span><span>All Services</span></Link>
+        <Link to="/login" className="brand brand-lg"><span className="brand-logo" translate="no" aria-hidden="true">A<span>S</span></span><span className="brand-name" translate="no">All <em>Services</em></span></Link>
         <h1>Work with All Services 🛵🔧⚡</h1>
         <p>Delivery partners, plumbers, electricians, technicians, cleaners and more — earn on every job across {cityOf(settings).split(',')[0]}. Choose your own hours, get paid to your wallet, work near home.</p>
         <div className="hero-chips">

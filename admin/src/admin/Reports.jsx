@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, apiFile } from '../api.js';
 import { AGENT_STATE, rupees } from '../orderStatus.jsx';
-import { useLoad } from './ui.jsx';
+import { useLoad, useStaff } from './ui.jsx';
 
 // ---------- dates (the admin is in India, so local dates = IST) ----------
-const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+export const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const today = () => new Date();
-const PRESETS = {
+export const PRESETS = {
   today: { label: 'Today', range: () => [today(), today()] },
   yesterday: { label: 'Yesterday', range: () => [addDays(today(), -1), addDays(today(), -1)] },
   d7: { label: 'Last 7 days', range: () => [addDays(today(), -6), today()] },
@@ -19,11 +19,11 @@ const PRESETS = {
     range: () => [new Date(today().getFullYear(), today().getMonth() - 1, 1), new Date(today().getFullYear(), today().getMonth(), 0)],
   },
 };
-const shortDay = (s) => new Date(`${s}T00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+export const shortDay = (s) => new Date(`${s}T00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 const n = (v) => Number(v || 0).toLocaleString('en-IN');
 
 // ---------- CSV (client side, for the tables) ----------
-function downloadCsv(filename, columns, rows) {
+export function downloadCsv(filename, columns, rows) {
   const cell = (v) => {
     let s = v == null ? '' : String(v);
     if (/^[=+\-@]/.test(s)) s = `'${s}`;
@@ -37,6 +37,7 @@ function downloadCsv(filename, columns, rows) {
 }
 
 export default function Reports() {
+  const { base } = useStaff();
   const [preset, setPreset] = useState('d7');
   const [custom, setCustom] = useState(() => ({ from: iso(addDays(today(), -6)), to: iso(today()) }));
   const [from, to] = preset === 'custom' ? [custom.from, custom.to] : PRESETS[preset].range().map(iso);
@@ -149,7 +150,7 @@ export default function Reports() {
               title="Top customers"
               rows={r.top_customers}
               columns={[
-                { key: 'name', label: 'Customer', render: (x) => <Link className="link" to={`/admin/orders?customer=${x.id}`}>{x.name}</Link>, csv: (x) => x.name },
+                { key: 'name', label: 'Customer', render: (x) => <Link className="link" to={`${base}/orders?customer=${x.id}`}>{x.name}</Link>, csv: (x) => x.name },
                 { key: 'phone', label: 'Phone' },
                 { key: 'orders', label: 'Orders', num: true },
                 { key: 'spent', label: 'Spent', num: true, money: true, bar: true },
@@ -174,7 +175,7 @@ export default function Reports() {
 }
 
 // ---------- headline numbers ----------
-function Kpis({ k, prev }) {
+export function Kpis({ k, prev }) {
   const tiles = [
     { label: 'Orders', value: n(k.orders), cur: k.orders, prev: prev.orders, good: 'up', sub: `${n(k.in_progress)} in progress now` },
     { label: 'Delivered', value: n(k.delivered), cur: k.delivered, prev: prev.delivered, good: 'up', sub: k.orders ? `${Math.round((k.delivered / k.orders) * 100)}% of orders` : '—' },
@@ -212,7 +213,7 @@ function Delta({ cur, prev, good }) {
 }
 
 // ---------- single-series bar chart (SVG, one hue, hover tooltip) ----------
-function ChartPanel({ title, subtitle, children }) {
+export function ChartPanel({ title, subtitle, children }) {
   return (
     <section className="panel chart-panel">
       <div className="chart-head"><h3>{title}</h3><small className="muted">{subtitle}</small></div>
@@ -221,7 +222,7 @@ function ChartPanel({ title, subtitle, children }) {
   );
 }
 
-function BarChart({ data, format = (v) => n(v), labelEvery }) {
+export function BarChart({ data, format = (v) => n(v), labelEvery }) {
   const [hover, setHover] = useState(null);
   const W = 560;
   const H = 240;
@@ -283,7 +284,7 @@ function BarChart({ data, format = (v) => n(v), labelEvery }) {
 }
 
 // ---------- tables ----------
-function BreakdownTable({ title, rows, columns, file, empty = 'No data in this period' }) {
+export function BreakdownTable({ title, rows, columns, file, empty = 'No data in this period' }) {
   const barCol = columns.find((c) => c.bar);
   const max = barCol ? Math.max(1, ...rows.map((r) => Number(r[barCol.key]) || 0)) : 1;
   return (
@@ -336,7 +337,8 @@ const AGENT_COLS = [
   { key: 'cash_in_hand', label: 'Cash in hand ₹', num: true },
 ];
 
-function AgentTable({ rows, tag }) {
+export function AgentTable({ rows, tag }) {
+  const { base } = useStaff();
   const [sort, setSort] = useState({ key: 'delivered', dir: -1 });
   const sorted = [...rows].sort((a, b) => {
     const va = a[sort.key] ?? -1;
@@ -362,7 +364,7 @@ function AgentTable({ rows, tag }) {
             {sorted.map((a) => (
               <tr key={a.user_id}>
                 <td>
-                  <Link className="link" to={`/admin/agents?open=${a.user_id}`}>{a.name}</Link>
+                  <Link className="link" to={`${base}/agents?open=${a.user_id}`}>{a.name}</Link>
                   <div className="muted small">{a.phone}</div>
                 </td>
                 <td><span className="status-badge" style={{ '--c': AGENT_STATE[a.state]?.color }}>{AGENT_STATE[a.state]?.label}</span></td>

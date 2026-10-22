@@ -75,6 +75,64 @@ router.get('/quote', h(async (req, res) => {
   res.json({ ...q, delivery_fee: Number(q.delivery_fee), base_fee: Number(q.base_fee) });
 }));
 
+// 🎉 Launch offer: free deliveries this customer's mobile number still has (the home banner hides at 0).
+router.get('/offer', h(async (req, res) => {
+  const { rows } = await query(
+    "SELECT greatest(0, fn_setting_num('free_delivery_orders', 1) - fn_free_deliveries_used($1))::int AS free_left", [req.user.id]);
+  res.json(rows[0]);
+}));
+
+// Home page: orders still on the way (live card) + the last 3 different delivered orders (Order again). Items come
+// with today's product details, and only products still on sale, so "Order again" refills the cart at today's price.
+router.get('/home', h(async (req, res) => {
+  const { rows } = await query(
+    `SELECT o.id, o.kind, o.status, o.created_at, o.via_service_id,
+            (SELECT string_agg(fn_item_label(i.name, i.qty, i.sell_by, i.unit), ', ' ORDER BY i.id)
+               FROM order_items i WHERE i.order_id = o.id) AS summary,
+            s.name AS service_name, s.slug AS service_slug, st.name AS skill_name, st.icon AS skill_icon,
+            v.name AS via_name, v.slug AS via_slug, v.is_village AS via_village,
+            (SELECT c.icon FROM order_items i
+               LEFT JOIN products p ON p.id = i.product_id
+               LEFT JOIN services s2 ON s2.id = coalesce(i.service_id, p.service_id)
+               LEFT JOIN categories c ON c.id = s2.category_id
+              WHERE i.order_id = o.id LIMIT 1) AS icon,
+            (SELECT jsonb_agg(jsonb_build_object(
+                      'qty', i.qty,
+                      'product', jsonb_build_object('id', p.id, 'name', p.name, 'brand', p.brand, 'unit', p.unit, 'price', p.price,
+                                                    'mrp', p.mrp, 'icon', p.icon, 'image_url', p.image_url, 'sell_by', p.sell_by,
+                                                    'note_options', p.note_options),
+                      'service', jsonb_build_object('id', ps.id, 'name', ps.name, 'category_icon', c.icon, 'price_on_bill', ps.price_on_bill))
+                    ORDER BY i.id)
+               FROM order_items i
+               JOIN products p ON p.id = i.product_id AND p.is_active AND p.in_stock
+               JOIN services ps ON ps.id = p.service_id AND ps.is_active
+               LEFT JOIN categories c ON c.id = ps.category_id
+              WHERE i.order_id = o.id) AS items
+       FROM orders o
+       JOIN service_types st ON st.code = o.skill_code
+       LEFT JOIN services v ON v.id = o.via_service_id
+       LEFT JOIN LATERAL (SELECT s.name, s.slug FROM order_items i
+                            JOIN services s ON s.id = coalesce(i.service_id, (SELECT p.service_id FROM products p WHERE p.id = i.product_id))
+                           WHERE i.order_id = o.id LIMIT 1) s ON true
+      WHERE o.customer_id = $1
+        AND (o.status IN ('placed', 'assigned', 'picked_up') OR (o.status = 'delivered' AND o.created_at > now() - interval '120 days'))
+      ORDER BY o.created_at DESC LIMIT 30`,
+    [req.user.id]
+  );
+  const active = rows.filter((o) => o.status !== 'delivered').slice(0, 2);
+  const again = [];
+  const seen = new Set();
+  for (const o of rows) {
+    if (o.status !== 'delivered' || !(o.via_slug || o.service_slug)) continue;
+    const key = `${o.via_service_id || ''}|${o.summary || o.service_slug}`; // the same order twice shows once
+    if (seen.has(key)) continue;
+    seen.add(key);
+    again.push(o);
+    if (again.length === 3) break;
+  }
+  res.json({ active, again });
+}));
+
 // Last address used, to pre-fill checkout.
 router.get('/last-address', h(async (req, res) => {
   const { rows } = await query(

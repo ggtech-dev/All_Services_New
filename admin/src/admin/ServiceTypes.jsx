@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Modal, Switch, useLoad, useToast } from './ui.jsx';
+import { Modal, Switch, useLoad, useStaff, useToast } from './ui.jsx';
 
 // Which type of agent does which services. Orders only go to agents with the matching type.
 export default function ServiceTypes() {
   const isHq = useAuth().user.role === 'superadmin'; // agent types are the same everywhere: HQ edits them
   const toast = useToast();
+  const { base } = useStaff();
   const list = useLoad(() => api('/admin/service-types'));
   const [editing, setEditing] = useState(null);
 
@@ -26,7 +27,7 @@ export default function ServiceTypes() {
       {gaps.length > 0 && (
         <div className="gap-alert">
           ⚠️ No active agents for: <b>{gaps.map((t) => `${t.icon} ${t.name}`).join(', ')}</b>. Orders for these services will wait until you
-          <Link to="/admin/agents"> add an agent</Link> or give an existing agent this type.
+          <Link to={`${base}/agents`}> add an agent</Link> or give an existing agent this type.
         </div>
       )}
 
@@ -44,11 +45,11 @@ export default function ServiceTypes() {
                   <td>“Your {t.agent_title.toLowerCase()}”</td>
                   <td>{t.services}</td>
                   <td>
-                    <Link className="link" to={`/admin/agents?skill=${t.code}`}>{t.agents}</Link>
+                    <Link className="link" to={`${base}/agents?skill=${t.code}`}>{t.agents}</Link>
                     {t.services > 0 && t.agents === 0 && <span className="mini-tag warn-tag">none!</span>}
                   </td>
                   <td>{t.agents_free > 0 ? <span className="free-count">🟢 {t.agents_free}</span> : <span className="muted">0</span>}</td>
-                  <td>{t.orders_waiting > 0 ? <Link className="link" to={`/admin/orders?skill=${t.code}`}>⏳ {t.orders_waiting}</Link> : <span className="muted">0</span>}</td>
+                  <td>{t.orders_waiting > 0 ? <Link className="link" to={`${base}/orders?skill=${t.code}`}>⏳ {t.orders_waiting}</Link> : <span className="muted">0</span>}</td>
                   <td>{isHq && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(t)}>Edit</button>}</td>
                 </tr>
               ))}
@@ -57,7 +58,7 @@ export default function ServiceTypes() {
           {list.loading && !list.data && <div className="center-block"><div className="spinner" /></div>}
         </div>
       </section>
-      <p className="muted small">To change a service's type, use the <Link className="link" to="/admin/services">Services</Link> page. To change an agent's types, open the agent in <Link className="link" to="/admin/agents">Manage agents</Link>.</p>
+      <p className="muted small">To change a service's type, use the <Link className="link" to={isHq ? "/super/services" : "/admin/my-services"}>Services</Link> page. To change an agent's types, open the agent in <Link className="link" to={`${base}/agents`}>Manage agents</Link>.</p>
 
       {editing && (
         <TypeForm

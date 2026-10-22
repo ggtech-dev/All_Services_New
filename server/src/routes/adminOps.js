@@ -34,10 +34,22 @@ router.use('/agents/:id', guard('SELECT 1 FROM agents WHERE user_id = $1 AND fra
 router.use('/customers/:id', guard('SELECT 1 FROM orders WHERE customer_id = $1 AND franchise_id = $2 LIMIT 1', 'Customer'));
 router.use('/subscriptions/:id', guard(
   'SELECT 1 FROM agent_subscriptions s JOIN agents a ON a.user_id = s.agent_id WHERE s.id = $1 AND a.franchise_id = $2', 'Subscription'));
-// Subscriptions are run by each franchise (dealer) admin: requests, payments, fees. The Super Admin only watches.
-router.use('/subscriptions', (req, res, next) => {
-  if (req.method !== 'GET' && req.isSuper) {
-    return res.status(403).json({ error: 'Subscriptions are managed by the franchise admin of each city' });
+// Each city is run by its franchise admin: orders, agents, subscriptions, shops… The Super Admin (HQ) watches every city
+// here but changes nothing — except what HQ sets up: agent types, delivery charges, subscription fees, and the city's
+// areas, villages and village charges, the home page's popular row. A city that is not run well: HQ talks to its
+// admin, or disables / suspends it.
+const HQ_SETS_UP = /^\/(localities|village-fees|popular|popular-own)(\/|$)/;
+const HQ_MAY_CHANGE = [/^\/service-types(\/|$)/, /^\/services\/\d+\/delivery-fee$/, /^\/delivery-charges\//, /^\/subscriptions\/services\/\d+$/, HQ_SETS_UP];
+// 🗺️ a franchise admin asks HQ for a new area / village (Requests to HQ) instead of adding it
+router.use((req, res, next) => {
+  if (!req.isSuper && req.method !== 'GET' && HQ_SETS_UP.test(req.path)) {
+    return res.status(403).json({ error: 'This is set by HQ — ask for a change in Requests to HQ' });
+  }
+  next();
+});
+router.use((req, res, next) => {
+  if (req.isSuper && req.method !== 'GET' && !HQ_MAY_CHANGE.some((re) => re.test(req.path))) {
+    return res.status(403).json({ error: 'HQ can view city operations only — the franchise admin of the city does this' });
   }
   next();
 });
@@ -63,6 +75,9 @@ router.get('/orders-stats', h(async (req, res) => {
             'worker_reports', (SELECT count(*) FROM worker_reports r JOIN workers w ON w.id = r.worker_id
                                 WHERE r.status = 'open' AND ($1::int IS NULL OR w.franchise_id = $1)),
             'new_digital', (SELECT count(*) FROM digital_requests WHERE status = 'new'),
+            -- ⏰ open orders nobody took / finished in time (overdue.sql)
+            'overdue', (SELECT count(*) FROM orders o WHERE o.status IN ('placed', 'assigned', 'picked_up')
+                          AND ($1::int IS NULL OR o.franchise_id = $1) AND fn_order_overdue(o) IS NOT NULL),
             'rides_to_check', (SELECT count(*) FROM ride_bookings b JOIN share_rides r ON r.id = b.ride_id
                                 WHERE b.status = 'paid' AND b.paid_at < now() - interval '1 hour' AND ($1::int IS NULL OR r.franchise_id = $1))) AS s`,
     [req.scope]
@@ -70,11 +85,12 @@ router.get('/orders-stats', h(async (req, res) => {
   res.json(rows[0].s);
 }));
 
-// ?status=placed|assigned|picked_up|delivered|cancelled|active  ?q=  ?agent=  ?customer=  ?date=YYYY-MM-DD
+// ?status=placed|assigned|picked_up|delivered|cancelled|active|overdue  ?q=  ?agent=  ?customer=  ?date=YYYY-MM-DD (India)
 router.get('/orders', h(async (req, res) => {
   const { status, q, agent, customer, date } = req.query;
   const { rows } = await query(
     `SELECT o.id, o.kind, o.status, o.total, o.delivery_fee, o.created_at, o.assigned_at, o.delivered_at,
+            fn_order_overdue(o) AS overdue, fn_order_due_at(o) AS due_at,
             o.contact_name, o.contact_phone, o.slot, o.agent_id, o.customer_id, o.franchise_id, f.city AS franchise_city,
             l.name AS locality_name, cu.username AS customer_username, ag.full_name AS agent_name, ag.phone AS agent_phone,
             o.skill_code, st.name AS skill_name, st.icon AS skill_icon,
@@ -87,12 +103,13 @@ router.get('/orders', h(async (req, res) => {
        JOIN service_types st ON st.code = o.skill_code
        LEFT JOIN users ag ON ag.id = o.agent_id
        LEFT JOIN franchises f ON f.id = o.franchise_id
-      WHERE ($1::text IS NULL OR ($1 = 'active' AND o.status IN ('placed', 'assigned', 'picked_up')) OR o.status = $1)
+      WHERE ($1::text IS NULL OR ($1 = 'active' AND o.status IN ('placed', 'assigned', 'picked_up')) OR o.status = $1
+             OR ($1 = 'overdue' AND o.status IN ('placed', 'assigned', 'picked_up') AND fn_order_overdue(o) IS NOT NULL))
         AND ($2::text IS NULL OR o.id::text = ltrim($2, '#') OR o.contact_name ILIKE '%' || $2 || '%'
              OR o.contact_phone LIKE '%' || $2 || '%' OR cu.username ILIKE '%' || $2 || '%' OR l.name ILIKE '%' || $2 || '%')
         AND ($3::int IS NULL OR o.agent_id = $3)
         AND ($4::int IS NULL OR o.customer_id = $4)
-        AND ($5::date IS NULL OR o.created_at::date = $5::date)
+        AND ($5::date IS NULL OR (o.created_at AT TIME ZONE 'Asia/Kolkata')::date = $5::date)
         AND ($6::text IS NULL OR o.skill_code = $6)
         AND ($7::int IS NULL OR o.franchise_id = $7)
         AND ($8::text IS NULL OR o.kind = $8)
@@ -115,7 +132,8 @@ router.get('/orders/:id', h(async (req, res) => {
       ORDER BY (v.state = 'free') DESC, distance_km NULLS LAST`,
     [order.locality_lat, order.locality_lng, order.skill_code, order.id]
   );
-  res.json({ ...order, candidates: agents });
+  const { rows: late } = await query('SELECT fn_order_overdue(o) AS overdue, fn_order_due_at(o) AS due_at FROM orders o WHERE o.id = $1', [order.id]);
+  res.json({ ...order, ...late[0], candidates: agents });
 }));
 
 router.post('/orders/:id/assign', h(async (req, res) => {
@@ -531,6 +549,14 @@ const saveLocality = (withId) => h(async (req, res) => {
     if (one.length !== 1) return res.status(400).json({ error: 'Choose the franchise (city) this area belongs to' });
     franchise = one[0].id;
   }
+  // 📍 an area must be inside its city's service range
+  const { rows: fr } = await query(
+    `SELECT f.city, f.radius_km, fn_distance_km(f.center_lat, f.center_lng, $2, $3) AS km FROM franchises f
+      WHERE f.id = coalesce($1, (SELECT franchise_id FROM localities WHERE id = $4)) AND f.center_lat IS NOT NULL`,
+    [franchise, num(b.lat), num(b.lng), withId ? Number(req.params.id) : null]);
+  if (fr[0]?.km != null && Number(fr[0].km) > Number(fr[0].radius_km)) {
+    return res.status(400).json({ error: `That place is ${fr[0].km} km from the centre of ${fr[0].city} — outside its ${Number(fr[0].radius_km)} km range` });
+  }
   const { rows } = await asActor(req.user.id, (db) =>
     db.query('SELECT * FROM fn_save_locality($1,$2,$3,$4,$5,$6,$7,$8,$9)', [
       withId ? Number(req.params.id) : null, typeof b.name === 'string' ? b.name : null,
@@ -543,19 +569,107 @@ const saveLocality = (withId) => h(async (req, res) => {
 });
 router.post('/localities', saveLocality(false));
 
-// 🏡 Village delivery charges of the franchise (up to 10 km / 10–15 km). Set by the franchise admin; HQ watches.
+// 🏡 Village delivery charges of the franchise (up to 10 km / 10–15 km). Set by HQ for the city chosen at the top.
 router.get('/village-fees', h(async (req, res) => {
   const { rows } = await query(
     `SELECT id, name, city, village_fee_near, village_fee_far FROM franchises
       WHERE ($1::int IS NULL OR id = $1) AND status <> 'disabled' ORDER BY city`, [req.scope]);
-  res.json({ franchises: rows, can_edit: !req.isSuper });
+  res.json({ franchises: rows, can_edit: !!req.isSuper && req.scope != null });
 }));
 router.put('/village-fees', h(async (req, res) => {
-  if (req.isSuper || req.scope == null) return res.status(403).json({ error: 'Village charges are set by the franchise admin of each city' });
+  if (req.scope == null) return res.status(400).json({ error: 'Choose the city at the top first' });
   await asActor(req.user.id, (db) => db.query('CALL sp_set_village_fees($1,$2,$3)', [req.scope, num(req.body?.near), num(req.body?.far)]));
   res.status(204).end();
 }));
 router.put('/localities/:id', saveLocality(true));
+
+// ---------- ⭐ "Our most popular services" on the home page (popular.sql) ----------
+// HQ: the all-cities list (no city chosen at the top), or a city's own list (city chosen). A city without its own list
+// shows the all-cities one — HQ taps "Make a list for this city" to change it there only. Franchise admin: view only
+// (they ask HQ in Requests to HQ).
+const POPULAR_SQL = `SELECT h.*, s.name AS service_name, s.slug AS service_slug, c.name AS category_name, c.slug AS category_slug,
+                            coalesce(h.image_url, s.image_url, c.image_url) AS photo
+                       FROM home_popular h LEFT JOIN services s ON s.id = h.service_id LEFT JOIN categories c ON c.id = h.category_id`;
+router.get('/popular', h(async (req, res) => {
+  const { rows: own } = await query('SELECT fn_popular_list_of($1) AS list', [req.scope]);
+  const list = own[0].list; // null = the all-cities list
+  const { rows } = await query(`${POPULAR_SQL} WHERE h.franchise_id IS NOT DISTINCT FROM $1 ORDER BY h.sort_order, h.id`, [list]);
+  res.json({ cards: rows, city: req.scope, own_list: list != null, can_edit: !!req.isSuper && (req.scope == null || list != null) });
+}));
+// the list the request works on: HQ with a city chosen edits that city's own list (it must exist first)
+const popularListOf = async (req) => {
+  if (req.scope == null) return { list: null };
+  const { rows } = await query('SELECT fn_popular_list_of($1) AS list', [req.scope]);
+  if (rows[0].list == null) throw Object.assign(new Error('This city shows the all-cities list — tap "Make a list for this city" first'), { status: 409 });
+  return { list: req.scope };
+};
+const popularBody = async (b) => {
+  const title = typeof b.title === 'string' ? b.title.trim().replace(/\s+/g, ' ') : '';
+  const subtitle = typeof b.subtitle === 'string' ? b.subtitle.trim().replace(/\s+/g, ' ') : '';
+  if (title.length < 2 || title.length > 60) throw Object.assign(new Error('Write a title (2–60 letters)'), { status: 400 });
+  if (subtitle.length > 80) throw Object.assign(new Error('Keep the short line under 80 letters'), { status: 400 });
+  const service = num(b.service_id);
+  const category = num(b.category_id);
+  if ((service == null) === (category == null)) throw Object.assign(new Error('Choose the service (or category) the card opens'), { status: 400 });
+  const ok = service != null
+    ? (await query('SELECT 1 FROM services WHERE id = $1 AND is_active', [service])).rowCount
+    : (await query('SELECT 1 FROM categories WHERE id = $1 AND is_active', [category])).rowCount;
+  if (!ok) throw Object.assign(new Error('That service / category is not active'), { status: 400 });
+  const image = typeof b.image_url === 'string' && b.image_url.trim() ? b.image_url.trim() : null;
+  if (image && !/^(https:\/\/|\/uploads\/)/.test(image)) throw Object.assign(new Error('The photo must be an https:// link or an uploaded photo'), { status: 400 });
+  return { title, subtitle: subtitle || null, service, category, image, credit: image ? (typeof b.image_credit === 'string' ? b.image_credit.slice(0, 300) : null) : null,
+    active: b.is_active !== false };
+};
+router.post('/popular', h(async (req, res) => {
+  const { list } = await popularListOf(req);
+  const b = await popularBody(req.body || {});
+  const { rows } = await asActor(req.user.id, (db) => db.query(
+    `INSERT INTO home_popular (franchise_id, service_id, category_id, title, subtitle, image_url, image_credit, is_active, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8, coalesce((SELECT max(sort_order) FROM home_popular WHERE franchise_id IS NOT DISTINCT FROM $1), 0) + 1) RETURNING *`,
+    [list, b.service, b.category, b.title, b.subtitle, b.image, b.credit, b.active]));
+  res.status(201).json(rows[0]);
+}));
+router.put('/popular/:id', h(async (req, res) => {
+  const { list } = await popularListOf(req);
+  const b = await popularBody(req.body || {});
+  const { rows } = await asActor(req.user.id, (db) => db.query(
+    `UPDATE home_popular SET service_id = $3, category_id = $4, title = $5, subtitle = $6, image_url = $7, image_credit = $8, is_active = $9, updated_at = now()
+      WHERE id = $1 AND franchise_id IS NOT DISTINCT FROM $2 RETURNING *`,
+    [num(req.params.id), list, b.service, b.category, b.title, b.subtitle, b.image, b.credit, b.active]));
+  if (!rows[0]) return res.status(404).json({ error: 'Card not found in this list' });
+  res.json(rows[0]);
+}));
+router.delete('/popular/:id', h(async (req, res) => {
+  const { list } = await popularListOf(req);
+  const { rowCount } = await asActor(req.user.id, (db) => db.query('DELETE FROM home_popular WHERE id = $1 AND franchise_id IS NOT DISTINCT FROM $2', [num(req.params.id), list]));
+  if (!rowCount) return res.status(404).json({ error: 'Card not found in this list' });
+  res.status(204).end();
+}));
+// body: { dir: -1 (up) | 1 (down) } — swaps the card with its neighbour
+router.post('/popular/:id/move', h(async (req, res) => {
+  const { list } = await popularListOf(req);
+  const dir = req.body?.dir === -1 ? -1 : 1;
+  await asActor(req.user.id, async (db) => {
+    const { rows } = await db.query('SELECT id FROM home_popular WHERE franchise_id IS NOT DISTINCT FROM $1 ORDER BY sort_order, id', [list]);
+    const i = rows.findIndex((r) => r.id === num(req.params.id));
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= rows.length) return;
+    [rows[i], rows[j]] = [rows[j], rows[i]];
+    for (const [k, r] of rows.entries()) await db.query('UPDATE home_popular SET sort_order = $2 WHERE id = $1', [r.id, k + 1]);
+  });
+  res.status(204).end();
+}));
+// a city's own list: start it (a copy of the all-cities list) · or drop it (back to the all-cities list)
+router.post('/popular-own', h(async (req, res) => {
+  if (req.scope == null) return res.status(400).json({ error: 'Choose the city at the top first' });
+  await asActor(req.user.id, (db) => db.query('SELECT fn_popular_own_list($1)', [req.scope]));
+  res.status(204).end();
+}));
+router.delete('/popular-own', h(async (req, res) => {
+  if (req.scope == null) return res.status(400).json({ error: 'Choose the city at the top first' });
+  await asActor(req.user.id, (db) => db.query('DELETE FROM home_popular WHERE franchise_id = $1', [req.scope]));
+  res.status(204).end();
+}));
 
 // ---------- service types (which agents do which services) ----------
 router.get('/service-types', h(async (req, res) => {

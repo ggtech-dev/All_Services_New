@@ -121,7 +121,16 @@ export function CartProvider({ children }) {
     const find = (productId) => items.find((i) => i.product_id === productId);
     const setLines = (update) => setOwn((o) => ({ ...o, lines: update(o.lines) }));
     const hasContent = items.length > 0 || lines.some((x) => x.name.trim()) || !!photo;
+    const toItem = (product, service, qty) => ({
+      product_id: product.id, name: product.name, brand: product.brand, unit: product.unit,
+      price: Number(product.price), mrp: product.mrp ? Number(product.mrp) : null,
+      icon: product.icon || service?.category_icon, image_url: product.image_url,
+      service_id: service?.id, service_name: service?.name, qty,
+      sell_by: product.sell_by || 'pack', on_bill: !!service?.price_on_bill,
+      note_options: product.note_options || null, cuts: [], extra: '',
+    });
     return {
+      hasContent,
       items,
       via,
       // Adds something (fn) after making sure the cart is in the right mode. `target` = the instant service, or null
@@ -176,15 +185,14 @@ Clear the cart and start a new one?`;
         setItems((list) =>
           list.some((i) => i.product_id === product.id)
             ? list.map((i) => (i.product_id === product.id ? { ...i, qty: nextQty(i.qty, i.sell_by) } : i))
-            : [...list, {
-                product_id: product.id, name: product.name, brand: product.brand, unit: product.unit,
-                price: Number(product.price), mrp: product.mrp ? Number(product.mrp) : null,
-                icon: product.icon || service?.category_icon, image_url: product.image_url,
-                service_id: service?.id, service_name: service?.name, qty: 1,
-                sell_by: product.sell_by || 'pack', on_bill: !!service?.price_on_bill,
-                note_options: product.note_options || null, cuts: [], extra: '',
-              }]
+            : [...list, toItem(product, service, 1)]
         ),
+      // 🔁 Order again: the cart becomes exactly that old order (lines = [{ product, service, qty }]); `target` as in withClaim
+      replaceWith: (lines, target) => {
+        setItems(() => lines.map((l) => toItem(l.product, l.service, Math.min(Number(l.qty) || 1, 50))));
+        setOwn((o) => ({ ...o, lines: [], photo: null }));
+        setVia(target ? { id: target.id, name: target.name, slug: target.slug, ...(target.is_village && { village: true }) } : null);
+      },
       less: (productId) => {
         const i = find(productId);
         if (i) setQty(productId, prevQty(i.qty, i.sell_by));

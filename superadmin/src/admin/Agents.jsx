@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, apiFile } from '../api.js';
-import { Modal, timeAgo, useLoad, useToast } from './ui.jsx';
+import { Modal, ViewOnlyNote, timeAgo, useLoad, useStaff, useToast } from './ui.jsx';
 import { StateBadge, StatusBadge, VEHICLES, rupees, usePoll, when } from '../orderStatus.jsx';
 import { AGENT_DOCS, AgentForm, SkillPicker } from '../pages/AgentApply.jsx';
 import MapView, { secondsAgo } from '../components/MapView.jsx';
@@ -53,9 +53,11 @@ export default function Agents() {
     (a) => inSkill(a) && inTab(a, tab) && (!q || `${a.full_name} ${a.phone} ${a.username} ${a.locality_name || ''}`.toLowerCase().includes(q.toLowerCase()))
   );
   const applyLink = `${partnerOrigin()}/agent/apply`;
+  const { hq } = useStaff();
 
   return (
     <div className="stack">
+      {hq && <ViewOnlyNote what="agents (approvals, removals, wallet payments)" />}
       <div className="toolbar">
         <div className="tabs scroll-tabs" role="tablist">
           {TABS.map(([k, label]) => (
@@ -71,13 +73,17 @@ export default function Agents() {
           <option value="">All types of work</option>
           {types.data?.map((t) => <option key={t.code} value={t.code}>{t.icon} {t.name}</option>)}
         </select>
-        <button
-          className="btn btn-ghost"
-          onClick={() => navigator.clipboard?.writeText(applyLink).then(() => toast('Application link copied — share it on WhatsApp'), () => prompt('Copy this link:', applyLink))}
-        >
-          🔗 Copy apply link
-        </button>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>➕ Add agent</button>
+        {!hq && (
+          <>
+            <button
+              className="btn btn-ghost"
+              onClick={() => navigator.clipboard?.writeText(applyLink).then(() => toast('Application link copied — share it on WhatsApp'), () => prompt('Copy this link:', applyLink))}
+            >
+              🔗 Copy apply link
+            </button>
+            <button className="btn btn-primary" onClick={() => setAdding(true)}>➕ Add agent</button>
+          </>
+        )}
       </div>
 
       {tab === 'pending' ? (
@@ -94,7 +100,7 @@ export default function Agents() {
                   <div className="muted small">Applied {when(a.created_at)}</div>
                 </div>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={() => setOpenId(a.user_id)}>Review documents →</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setOpenId(a.user_id)}>{hq ? 'View application →' : 'Review documents →'}</button>
             </article>
           ))}
         </div>
@@ -182,6 +188,7 @@ function DocThumb({ agentId, field, label }) {
 
 // Where the agent is now + their path over the last 12 hours.
 function AgentLocation({ agent }) {
+  const { base } = useStaff();
   const [track, setTrack] = useState(null);
   const [pos, setPos] = useState(null);
   const load = useCallback(() => {
@@ -203,7 +210,7 @@ function AgentLocation({ agent }) {
     <section>
       <div className="panel-head">
         <h4>Live location <span className="muted small">· updated {secondsAgo(pos.age_seconds)}{track.order && ` · order #${track.order.id} is ${track.order.distance_km} km away (~${track.order.eta_minutes} min)`}</span></h4>
-        <Link className="link" to="/admin/live">Open live map →</Link>
+        <Link className="link" to={`${base}/live`}>Open live map →</Link>
       </div>
       <MapView markers={markers} path={track.trail.map((p) => [p.lat, p.lng])} fitKey={agent.user_id} height={260} />
     </section>
@@ -223,6 +230,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [wallet, setWallet] = useState({ type: 'payout', amount: '', note: '' });
   const [askReason, reasonBox] = useAskReason();
+  const { hq, base } = useStaff(); // HQ watches: no approve / remove / types / wallet buttons
 
   const saved = useRef(null); // the agent's types of work as last loaded from the server
   const load = useCallback(
@@ -268,7 +276,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
             <StateBadge state={a.state} />
             <div className="muted small">📱 {a.phone} · joined {when(a.joined_at)}</div>
           </div>
-          <div className="ad-actions">
+          {!hq && <div className="ad-actions">
             {a.status === 'pending' && (
               <>
                 <button className="btn btn-primary btn-sm btn-success" disabled={busy}
@@ -317,16 +325,21 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                 Restore
               </button>
             )}
-          </div>
+          </div>}
         </div>
+        {hq && <ViewOnlyNote what="this agent" />}
         {a.status === 'rejected' && <div className="alert">Rejected: {a.rejection_reason}</div>}
         {a.status === 'removed' && <div className="alert">Removed{a.removed_at ? ` on ${when(a.removed_at)}` : ''}: {a.removed_reason}</div>}
         {reasonBox}
 
         <section className="skills-edit">
           <h4>Types of work <span className="muted small">— this agent only sees and gets these orders</span></h4>
-          <SkillPicker types={types} value={skills || []} onChange={setSkills} />
-          {skills && skills.slice().sort().join() !== a.skills.slice().sort().join() && (
+          {hq ? (
+            <div className="chip-row">{a.skills.map((c) => { const t = types.find((x) => x.code === c); return <span key={c} className="skill-chip small">{t?.icon} {t?.name || c}</span>; })}</div>
+          ) : (
+            <SkillPicker types={types} value={skills || []} onChange={setSkills} />
+          )}
+          {!hq && skills && skills.slice().sort().join() !== a.skills.slice().sort().join() && (
             <div className="skills-save">
               <button className="btn btn-primary btn-sm" disabled={busy || !skills.length}
                 onClick={() => act(() => api(`/admin/agents/${a.user_id}/skills`, { method: 'PATCH', body: { skills } }), 'Types of work updated')}>
@@ -403,7 +416,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                   ))}
                 </div>
               </section>
-              <section>
+              {!hq && <section>
                 <h4>Wallet</h4>
                 <form className="wallet-form" onSubmit={(e) => {
                   e.preventDefault();
@@ -422,13 +435,13 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                   </div>
                   <button className="btn btn-primary btn-sm" disabled={busy || !wallet.amount}>Save</button>
                 </form>
-              </section>
+              </section>}
             </div>
 
             <section>
               <div className="panel-head">
                 <h4>Recent orders</h4>
-                <Link className="link" to={`/admin/orders?agent=${a.user_id}`} onClick={onClose}>All orders →</Link>
+                <Link className="link" to={`${base}/orders?agent=${a.user_id}`} onClick={onClose}>All orders →</Link>
               </div>
               <div className="table-scroll">
                 <table className="table compact">
@@ -436,7 +449,7 @@ function AgentDetail({ id, types, onClose, onChanged }) {
                   <tbody>
                     {data.orders.map((o) => (
                       <tr key={o.id}>
-                        <td><Link className="link" to={`/admin/orders?open=${o.id}`} onClick={onClose}>#{o.id}</Link> <span className="muted small">{when(o.created_at)}</span></td>
+                        <td><Link className="link" to={`${base}/orders?open=${o.id}`} onClick={onClose}>#{o.id}</Link> <span className="muted small">{when(o.created_at)}</span></td>
                         <td>{o.contact_name} <span className="muted small">{o.locality_name}</span></td>
                         <td><StatusBadge status={o.status} /></td>
                         <td>{rupees(o.total)}</td>

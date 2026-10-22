@@ -44,9 +44,13 @@ export function PromoCard({ p, variant = 'slide', preview = false, onOpen }) {
 }
 
 // Big auto-sliding banner + a row of smaller tiles, on the customer home page.
-export default function Promotions() {
-  const [data, setData] = useState(null);
+// hideFreeDelivery: this mobile number already had its free delivery → its "free delivery" offer cards are hidden too.
+const isFreeDeliveryOffer = (p) => /free delivery/i.test(`${p.title || ''} ${p.subtitle || ''}`);
+export default function Promotions({ hideFreeDelivery = false }) {
+  const [raw, setData] = useState(null);
   const open = useOpenPromotion();
+  const keep = (list) => (hideFreeDelivery ? list.filter((p) => !isFreeDeliveryOffer(p)) : list);
+  const data = raw && { carousel: keep(raw.carousel), tiles: keep(raw.tiles) };
 
   useEffect(() => {
     api('/promotions')

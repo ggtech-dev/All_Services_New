@@ -22,12 +22,27 @@ LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
 $$;
 
 -- Delivery charge the customer pays on their next order, whose normal charge is p_base
--- (set per service by the admin): free for their first N orders.
+-- (set per service by the admin): free for their first N deliveries that have a charge (setting free_delivery_orders).
 DROP FUNCTION IF EXISTS fn_delivery_fee_for(INT);
+-- Free deliveries (launch offer) already given to this customer's MOBILE NUMBER — by any account that has the
+-- number — so the offer is given once per number, not once per account. Only orders whose charge was really waived
+-- count (orders.free_delivery): a water can (delivery included) or a plumber visit (no charge) does not use it up,
+-- and a cancelled order gives it back.
+DROP FUNCTION IF EXISTS fn_customer_order_count(INT);
+CREATE OR REPLACE FUNCTION fn_free_deliveries_used(p_customer_id INT) RETURNS INT
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+  WITH me AS (SELECT right(regexp_replace(coalesce(phone, ''), '\D', '', 'g'), 10) AS ph FROM users WHERE id = p_customer_id)
+  SELECT count(*)::int FROM orders o
+   WHERE o.status <> 'cancelled' AND o.free_delivery
+     AND (o.customer_id = p_customer_id
+          OR o.customer_id IN (SELECT u.id FROM users u, me WHERE length(me.ph) = 10
+                                 AND right(regexp_replace(coalesce(u.phone, ''), '\D', '', 'g'), 10) = me.ph))
+$$;
+
 CREATE OR REPLACE FUNCTION fn_delivery_fee_for(p_customer_id INT, p_base NUMERIC) RETURNS NUMERIC
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
   SELECT CASE
-    WHEN (SELECT count(*) FROM orders WHERE customer_id = p_customer_id AND status <> 'cancelled')
+    WHEN fn_free_deliveries_used(p_customer_id)
          < fn_setting_num('free_delivery_orders', 3) THEN 0
     ELSE greatest(coalesce(p_base, 0), 0)
   END
@@ -78,6 +93,7 @@ DECLARE
   v_win      RECORD;
   v_sub      NUMERIC := 0;
   v_fee      NUMERIC := 0;
+  v_offer    BOOLEAN := false;  -- the delivery charge was waived by the launch offer
   v_base     NUMERIC := 0;
   v_kind     TEXT;
   v_skills   TEXT[] := ARRAY[]::TEXT[];
@@ -104,6 +120,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM localities WHERE id = (p_contact->>'locality_id')::int AND is_active) THEN
     RAISE EXCEPTION 'Please choose your area' USING ERRCODE = '22023';
   END IF;
+  -- 📍 the delivery location (GPS / pin) is required and must be inside the chosen area's franchise range (geo.sql)
+  PERFORM fn_check_order_location(p_contact);
 
   v_kind := CASE WHEN p_service_id IS NOT NULL THEN 'service' ELSE 'products' END;
 
@@ -123,6 +141,7 @@ BEGIN
     v_sub := v_svc.base_price;
     v_skill := v_svc.skill_code;
     v_fee := fn_delivery_fee_for(p_customer_id, v_svc.delivery_fee);
+    v_offer := coalesce(v_svc.delivery_fee, 0) > 0 AND v_fee = 0;
   ELSE
     IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
       RAISE EXCEPTION 'Your cart is empty' USING ERRCODE = '22023';
@@ -177,7 +196,8 @@ BEGIN
         v_slot := p_slot;
       ELSE
         v_fee := fn_delivery_fee_for(p_customer_id, v_via.delivery_fee);
-        v_slot := format('Now — within %s min', coalesce(v_via.eta_minutes, 15));
+        v_offer := coalesce(v_via.delivery_fee, 0) > 0 AND v_fee = 0;
+        v_slot := format('Now — within %s min', coalesce(v_via.eta_minutes, 10));
       END IF;
       v_services := v_services || v_via.id;
     ELSE
@@ -188,6 +208,7 @@ BEGIN
     -- One trip: a cart from several shops pays the highest delivery charge among them.
     SELECT coalesce(max(s.delivery_fee), 0) INTO v_base FROM services s WHERE s.id = ANY(v_services);
     v_fee := fn_delivery_fee_for(p_customer_id, v_base);
+    v_offer := v_base > 0 AND v_fee = 0;
 
     -- Daily services deliver only in their time window (e.g. 6–10 AM): the slot must be one we offered.
     SELECT * INTO v_win FROM fn_window_of(v_services);
@@ -292,7 +313,7 @@ BEGIN
     END IF;
   END IF;
 
-  UPDATE orders SET subtotal = v_sub, total = v_sub + v_fee, skill_code = v_skill WHERE id = v.id RETURNING * INTO v;
+  UPDATE orders SET subtotal = v_sub, total = v_sub + v_fee, skill_code = v_skill, free_delivery = v_offer WHERE id = v.id RETURNING * INTO v;
   RETURN v;
 END $$;
 
@@ -648,6 +669,13 @@ END $$;
 
 -- ============ reports ============
 
+-- Midnight today in India, whatever time zone the database server runs in (the cloud server is on UTC): every
+-- "today" number starts here, so an order at 1 AM counts for today, not yesterday.
+CREATE OR REPLACE FUNCTION fn_ist_today() RETURNS TIMESTAMPTZ
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+  SELECT date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+$$;
+
 CREATE OR REPLACE FUNCTION fn_agent_stats(p_agent_id INT) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
   WITH w AS (
@@ -657,13 +685,13 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
       coalesce(sum(amount) FILTER (WHERE type = 'cod_collected'), 0)
         - coalesce(sum(amount) FILTER (WHERE type = 'cod_deposited'), 0) AS cash,
       coalesce(sum(amount) FILTER (WHERE type IN ('earning', 'bonus')), 0) AS lifetime,
-      coalesce(sum(amount) FILTER (WHERE type IN ('earning', 'bonus') AND created_at >= date_trunc('day', now())), 0) AS today_earn,
+      coalesce(sum(amount) FILTER (WHERE type IN ('earning', 'bonus') AND created_at >= fn_ist_today()), 0) AS today_earn,
       coalesce(sum(amount) FILTER (WHERE type = 'payout'), 0) AS paid_out
     FROM agent_wallet WHERE agent_id = p_agent_id
   ), o AS (
     SELECT
       count(*) FILTER (WHERE status = 'delivered') AS total_deliveries,
-      count(*) FILTER (WHERE status = 'delivered' AND delivered_at >= date_trunc('day', now())) AS today_deliveries,
+      count(*) FILTER (WHERE status = 'delivered' AND delivered_at >= fn_ist_today()) AS today_deliveries,
       count(*) FILTER (WHERE status IN ('assigned', 'picked_up')) AS active_orders,
       round(avg(extract(epoch FROM delivered_at - assigned_at) / 60) FILTER (WHERE status = 'delivered')) AS avg_minutes
     FROM orders WHERE agent_id = p_agent_id
@@ -675,12 +703,12 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
     'active_orders', o.active_orders, 'avg_delivery_minutes', o.avg_minutes,
     'last7', (
       SELECT jsonb_agg(jsonb_build_object('day', d::date, 'deliveries', coalesce(x.n, 0), 'earnings', coalesce(x.e, 0)) ORDER BY d)
-        FROM generate_series(date_trunc('day', now()) - interval '6 days', date_trunc('day', now()), interval '1 day') d
+        FROM generate_series((now() AT TIME ZONE 'Asia/Kolkata')::date - 6, (now() AT TIME ZONE 'Asia/Kolkata')::date, interval '1 day') d
         LEFT JOIN (
-          SELECT date_trunc('day', delivered_at) AS day, count(*) AS n, sum(agent_earning) AS e
+          SELECT (delivered_at AT TIME ZONE 'Asia/Kolkata')::date AS day, count(*) AS n, sum(agent_earning) AS e
             FROM orders WHERE agent_id = p_agent_id AND status = 'delivered'
            GROUP BY 1
-        ) x ON x.day = d
+        ) x ON x.day = d::date
     )
   )
   FROM w, o
@@ -704,18 +732,18 @@ SELECT a.*, u.username, u.full_name, u.phone, u.email, u.created_at AS joined_at
   LEFT JOIN localities l ON l.id = a.locality_id
   LEFT JOIN LATERAL (SELECT count(*) AS n FROM orders o WHERE o.agent_id = a.user_id AND o.status IN ('assigned', 'picked_up')) act ON true
   LEFT JOIN LATERAL (SELECT count(*) AS n FROM orders o WHERE o.agent_id = a.user_id AND o.status = 'delivered'
-                       AND o.delivered_at >= date_trunc('day', now())) tod ON true;
+                       AND o.delivered_at >= fn_ist_today()) tod ON true;
 
 DROP FUNCTION IF EXISTS fn_order_stats();
 CREATE OR REPLACE FUNCTION fn_order_stats(p_franchise INT DEFAULT NULL) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
   SELECT jsonb_build_object(
-    'today_orders',     (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND created_at >= date_trunc('day', now())),
+    'today_orders',     (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND created_at >= fn_ist_today()),
     'waiting',          (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'placed'),
     'in_progress',      (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status IN ('assigned', 'picked_up')),
-    'delivered_today',  (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'delivered' AND delivered_at >= date_trunc('day', now())),
-    'cancelled_today',  (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'cancelled' AND cancelled_at >= date_trunc('day', now())),
-    'revenue_today',    (SELECT coalesce(sum(total), 0) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'delivered' AND delivered_at >= date_trunc('day', now())),
+    'delivered_today',  (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'delivered' AND delivered_at >= fn_ist_today()),
+    'cancelled_today',  (SELECT count(*) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'cancelled' AND cancelled_at >= fn_ist_today()),
+    'revenue_today',    (SELECT coalesce(sum(total), 0) FROM orders WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND status = 'delivered' AND delivered_at >= fn_ist_today()),
     'agents_free',      (SELECT count(*) FROM v_agents WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND state = 'free'),
     'agents_busy',      (SELECT count(*) FROM v_agents WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND state = 'busy'),
     'agents_offline',   (SELECT count(*) FROM v_agents WHERE (p_franchise IS NULL OR franchise_id = p_franchise) AND state = 'offline'),

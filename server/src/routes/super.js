@@ -42,13 +42,50 @@ router.get('/franchise-options', h(async (req, res) => {
   res.json(rows);
 }));
 
-// body: dealer details + optional first admin login { admin_username, admin_password, admin_name, admin_phone, admin_email }
+// 📍 Where a franchise serves, set by HQ: centre point + range (km), village charges and — for a new franchise — its
+// first areas and villages. Everything in the same transaction as the franchise itself.
+//   body: { center_lat, center_lng, radius_km?, village_fee_near?, village_fee_far?,
+//           areas?: [{ name, pincode?, lat, lng, is_village?, village_band? }] }
+const bad = (message) => Object.assign(new Error(message), { status: 400 });
+async function saveServiceZone(db, fid, b, isNew) {
+  const lat = num(b.center_lat);
+  const lng = num(b.center_lng);
+  if ((lat == null) !== (lng == null) || (lat != null && (lat < 6 || lat > 37.5 || lng < 68 || lng > 97.5))) throw bad('Tap the map to set the centre of the city');
+  if (isNew && lat == null) throw bad('Tap the map to set the centre of the city');
+  const radius = b.radius_km == null || b.radius_km === '' ? null : num(b.radius_km);
+  if (radius != null && (radius < 1 || radius > 100)) throw bad('Service range must be 1–100 km');
+  for (const k of ['village_fee_near', 'village_fee_far']) {
+    if (b[k] != null && b[k] !== '' && !(num(b[k]) >= 0)) throw bad('Village charges must be ₹0 or more');
+  }
+  await db.query(
+    `UPDATE franchises SET center_lat = coalesce(round($2::numeric, 6), center_lat), center_lng = coalesce(round($3::numeric, 6), center_lng),
+            radius_km = coalesce($4, radius_km), village_fee_near = coalesce($5, village_fee_near), village_fee_far = coalesce($6, village_fee_far)
+      WHERE id = $1`,
+    [fid, lat, lng, radius, b.village_fee_near === '' ? null : num(b.village_fee_near), b.village_fee_far === '' ? null : num(b.village_fee_far)]);
+  if (!isNew || !Array.isArray(b.areas)) return;
+  if (b.areas.length > 100) throw bad('Add up to 100 areas here; more later in Areas');
+  const { rows: f } = await db.query('SELECT city, radius_km FROM franchises WHERE id = $1', [fid]);
+  for (const a of b.areas) {
+    const name = typeof a?.name === 'string' ? a.name.trim() : '';
+    const km = await db.query('SELECT fn_distance_km(center_lat, center_lng, $2, $3) AS km FROM franchises WHERE id = $1', [fid, num(a?.lat), num(a?.lng)]);
+    if (num(a?.lat) != null && Number(km.rows[0].km) > Number(f[0].radius_km)) {
+      throw bad(`${name || 'An area'} is ${km.rows[0].km} km from the centre — outside the ${Number(f[0].radius_km)} km range`);
+    }
+    await db.query('SELECT fn_save_locality(NULL,$1,$2,$3,$4,true,$5,$6,$7)', [
+      name || null, typeof a?.pincode === 'string' ? a.pincode : null, num(a?.lat), num(a?.lng), fid, a?.is_village === true,
+      a?.is_village === true ? num(a?.village_band) : null]);
+  }
+}
+
+// body: dealer details + first admin login { admin_username, admin_password, admin_name, admin_phone, admin_email }
+//       + service zone (saveServiceZone)
 router.post('/franchises', h(async (req, res) => {
   const b = req.body || {};
   const fr = await asActor(req.user.id, async (db) => {
     const { rows } = await db.query('SELECT * FROM fn_save_franchise(NULL, $1)', [JSON.stringify(b)]);
+    await saveServiceZone(db, rows[0].id, b, true);
     if (b.admin_username) await createAdmin(db, rows[0].id, b.admin_username, b.admin_password, b.admin_name, b.admin_phone, b.admin_email);
-    return rows[0];
+    return (await db.query('SELECT * FROM franchises WHERE id = $1', [rows[0].id])).rows[0];
   });
   res.status(201).json(fr);
 }));
@@ -69,7 +106,27 @@ router.get('/franchises/:id', h(async (req, res) => {
 }));
 
 router.put('/franchises/:id', h(async (req, res) => {
-  const { rows } = await asActor(req.user.id, (db) => db.query('SELECT * FROM fn_save_franchise($1, $2)', [id(req.params.id), JSON.stringify(req.body || {})]));
+  const fid = id(req.params.id);
+  const fr = await asActor(req.user.id, async (db) => {
+    await db.query('SELECT * FROM fn_save_franchise($1, $2)', [fid, JSON.stringify(req.body || {})]);
+    await saveServiceZone(db, fid, req.body || {}, false); // centre, range, village charges (areas: the Areas page)
+    return (await db.query('SELECT * FROM franchises WHERE id = $1', [fid])).rows[0];
+  });
+  res.json(fr);
+}));
+
+// Work still open in a city — shown before HQ disables or suspends it (nobody but its admin can handle these orders).
+router.get('/franchises/:id/open-work', h(async (req, res) => {
+  const fid = id(req.params.id);
+  const { rows } = await query(
+    `SELECT (SELECT count(*) FROM orders WHERE franchise_id = $1 AND status = 'placed')::int AS waiting,
+            (SELECT count(*) FROM orders WHERE franchise_id = $1 AND status IN ('assigned', 'picked_up'))::int AS on_the_way,
+            (SELECT count(*) FROM v_agents WHERE franchise_id = $1 AND state = 'busy')::int AS agents_busy,
+            (SELECT count(*) FROM v_agents WHERE franchise_id = $1 AND state IN ('free', 'busy'))::int AS agents_online,
+            (SELECT count(*) FROM ride_bookings b JOIN share_rides r ON r.id = b.ride_id
+              WHERE r.franchise_id = $1 AND r.depart_at > now() AND b.status IN ('held', 'paid', 'confirmed'))::int AS ride_bookings`,
+    [fid]
+  );
   res.json(rows[0]);
 }));
 
@@ -148,7 +205,8 @@ router.get('/requests', h(async (req, res) => {
 }));
 
 router.post('/requests/:rid/approve', h(async (req, res) => {
-  const { rows } = await asActor(req.user.id, (db) => db.query('SELECT * FROM fn_approve_catalog_request($1,$2,$3)', [id(req.params.rid), req.user.id, text(req.body?.note)]));
+  // services / products, or a new area / village (or switching one off) — geo.sql
+  const { rows } = await asActor(req.user.id, (db) => db.query('SELECT * FROM fn_approve_request($1,$2,$3)', [id(req.params.rid), req.user.id, text(req.body?.note)]));
   res.json(rows[0]);
 }));
 

@@ -59,7 +59,11 @@ router.get('/requests', h(async (req, res) => {
 // body: { kind: service|product, service_id?, product_id?, name?, category_id?, unit?, details? }
 router.post('/requests', h(async (req, res) => {
   if (req.isSuper) return res.status(400).json({ error: 'The Super Admin adds services directly in Master services' });
-  const { rows } = await asActor(req.user.id, (db) => db.query('SELECT * FROM fn_request_catalog($1,$2,$3)', [req.scope, req.user.id, JSON.stringify(req.body || {})]));
+  // 🗺️ { kind: 'area', name, lat, lng, pincode?, village_band? } · { kind: 'area_off', locality_id } — geo.sql
+  // ⭐ { kind: 'popular', service_id } · { kind: 'popular_off', popular_id } — popular.sql
+  const kind = req.body?.kind;
+  const fn = ['area', 'area_off'].includes(kind) ? 'fn_request_area' : ['popular', 'popular_off'].includes(kind) ? 'fn_request_popular' : 'fn_request_catalog';
+  const { rows } = await asActor(req.user.id, (db) => db.query(`SELECT * FROM ${fn}($1,$2,$3)`, [req.scope, req.user.id, JSON.stringify(req.body || {})]));
   res.status(201).json(rows[0]);
 }));
 
@@ -77,8 +81,9 @@ router.get('/complaints', h(async (req, res) => {
   res.json(rows[0].list);
 }));
 
-// body: { status, reply }
+// body: { status, reply } — the city's franchise admin answers; HQ only watches (see adminOps.js)
 router.patch('/complaints/:cid', h(async (req, res) => {
+  if (req.isSuper) return res.status(403).json({ error: 'HQ can view city operations only — the franchise admin of the city does this' });
   const cid = id(req.params.cid);
   if (req.scope != null) {
     const { rows } = await query('SELECT 1 FROM complaints WHERE id = $1 AND franchise_id = $2', [cid, req.scope]);

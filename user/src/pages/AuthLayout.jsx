@@ -7,8 +7,8 @@ export default function AuthLayout({ title, subtitle, children }) {
     <div className="auth-page">
       <section className="auth-hero">
         <div className="brand brand-lg">
-          <span className="brand-logo">AS</span>
-          <span>All Services</span>
+          <span className="brand-logo" translate="no" aria-hidden="true">A<span>S</span></span>
+          <span className="brand-name" translate="no">All <em>Services</em></span>
         </div>
         <h1>Every local service,<br />one app.</h1>
         <p>Water cans, plumbers, groceries, medicines, bike repair, scrap pickup and more — booked in a tap, delivered by trusted local partners.</p>

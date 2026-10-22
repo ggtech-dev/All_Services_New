@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { api } from '../api.js';
-import { Modal, Switch, useLoad, useToast } from './ui.jsx';
+import { Modal, Switch, ViewOnlyNote, useLoad, useStaff, useToast } from './ui.jsx';
 
 // Local shops agents buy from. At checkout a customer may choose one; the agent then buys only there.
+// Each city's franchise admin keeps the list; HQ watches.
 export default function Shops() {
   const toast = useToast();
+  const { hq } = useStaff();
   const list = useLoad(() => api('/admin/shops'));
   const services = useLoad(() => api('/admin/services'));
   const areas = useLoad(() => api('/localities'));
@@ -22,12 +24,13 @@ export default function Shops() {
 
   return (
     <div className="stack">
+      {hq && <ViewOnlyNote what="the shops list" />}
       <div className="toolbar">
         <p className="muted toolbar-note">
           Shops your agents buy from (kirana, vegetables, meat…). At checkout customers can pick one of these — the agent then buys
           <b> only from that shop</b>. Customers can also type another shop's name.
         </p>
-        <button className="btn btn-primary" onClick={() => setEditing({ name: '', locality_id: '', address: '', phone: '', service_ids: [], is_active: true })}>➕ Add shop</button>
+        {!hq && <button className="btn btn-primary" onClick={() => setEditing({ name: '', locality_id: '', address: '', phone: '', service_ids: [], is_active: true })}>➕ Add shop</button>}
       </div>
 
       <section className="panel table-panel">
@@ -42,8 +45,8 @@ export default function Shops() {
                   <td className="small">{sh.services.join(', ')}</td>
                   <td>{sh.phone ? <a className="link" href={`tel:${sh.phone}`}>{sh.phone}</a> : <span className="muted">—</span>}</td>
                   <td>{sh.orders}</td>
-                  <td><Switch checked={sh.is_active} onChange={() => toggle(sh)} label="" /></td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={() => setEditing(sh)}>Edit</button></td>
+                  <td>{hq ? (sh.is_active ? '✅' : <span className="muted">off</span>) : <Switch checked={sh.is_active} onChange={() => toggle(sh)} label="" />}</td>
+                  <td>{!hq && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(sh)}>Edit</button>}</td>
                 </tr>
               ))}
             </tbody>

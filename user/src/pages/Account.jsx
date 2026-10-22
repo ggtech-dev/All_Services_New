@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import AccountSecurity from '../components/AccountSecurity.jsx';
 import { InstallButton, ShareApp } from '../components/InstallApp.jsx';
@@ -8,7 +9,7 @@ import { MyComplaints } from '../components/CustomerComplaints.jsx';
 
 // Customer "My account": profile summary, mobile number and password.
 export default function Account() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   return (
     <div className="stack">
       <h1 className="page-title">My account</h1>
@@ -25,6 +26,7 @@ export default function Account() {
       <InstallButton />
       <ShareApp />
       <SupportLinks className="panel center-links" />
+      <button type="button" className="btn btn-ghost btn-block logout-btn" onClick={logout}><LogOut size={18} /> Log out</button>
       <p className="muted small center"><Link to="/credits" className="link">📷 Photo credits</Link></p>
     </div>
   );

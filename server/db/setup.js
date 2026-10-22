@@ -20,13 +20,13 @@ const image = (keywords) => images[keywords] || {};
 const defaultSettings = {
   banner_title: 'What do you need today?',
   banner_subtitle: 'Water cans, plumbers, kirana, medicines, bike repair and more — from trusted local partners near you.',
-  announcement: '🎉 Free delivery on your first 3 orders across Siddipet!',
+  announcement: '🎉 Free delivery on your first order in Siddipet!',
   support_phone: '+91 86886 87412', // help links on the login page and home (call)
   support_whatsapp: '+91 86886 87412',
   support_email: 'gouravmacha@gmail.com',
   service_city: 'Siddipet, Telangana',
   delivery_fee: '30', // starting delivery charge for shop services; after that it is set per service (admin → Delivery charges)
-  free_delivery_orders: '3',
+  free_delivery_orders: '1',
   agent_pay_per_order: '25',
   agent_max_active_orders: '1',
   require_delivery_otp: '0', // 1 = agent must enter the customer's OTP to mark delivered
@@ -60,6 +60,9 @@ try {
   await client.query(await sql('./share_ride.sql'));
   await client.query(await sql('./more_services.sql')); // 👷 Daily Workers directory, 💡 Digital Services requests (HQ only) // 🚗 Share Ride: cars, seat layouts, journeys, seat bookings
   await client.query(await sql('./login.sql')); // 📱 phone-first login, agents removed by the franchise admin — after orders.sql
+  await client.query(await sql('./overdue.sql')); // ⏰ overdue open orders (red badge for the admin) — last: reads every slot kind
+  await client.query(await sql('./geo.sql')); // 📍 franchise centre + range: where orders go, agents' zone, area requests
+  await client.query(await sql('./popular.sql')); // ⭐ "Our most popular services" on the home page (HQ list, city lists)
 
   await client.query('BEGIN');
 
@@ -418,6 +421,196 @@ try {
     await client.query("UPDATE categories SET sort_order = 9 WHERE slug = 'digital-services'");
     await client.query("INSERT INTO site_settings (key, value) VALUES ('seeded_shop_for_me_v1', current_date::text)");
     console.log('🛠️ Shop For Me, 👷 Daily Workers and 💡 Digital Services added.');
+  }
+
+  // One time (2026-10-21): launch offer = free delivery on the FIRST order only, once per mobile number (was "first 3",
+  // which the app no longer gave). The announcement says exactly that. Later changes in HQ → Settings are kept.
+  const offerDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'offer_first_order_v1'");
+  if (!offerDone.rowCount) {
+    await client.query("UPDATE site_settings SET value = '1' WHERE key = 'free_delivery_orders'");
+    await client.query("UPDATE site_settings SET value = '🎉 Free delivery on your first order in Siddipet!' WHERE key = 'announcement'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('offer_first_order_v1', current_date::text)");
+    console.log('🎉 Offer: free delivery on the first order (once per mobile number).');
+  }
+
+  // One time (2026-10-21): orders placed before orders.free_delivery existed — mark the ones whose delivery charge
+  // was waived (charge 0 although a service in it has a charge, not a village order), so the offer is not given twice.
+  const flagDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'offer_free_flag_v1'");
+  if (!flagDone.rowCount) {
+    const f = await client.query(`UPDATE orders o SET free_delivery = true
+       WHERE o.delivery_fee = 0 AND NOT o.free_delivery
+         AND NOT EXISTS (SELECT 1 FROM services v WHERE v.id = o.via_service_id AND v.is_village)
+         AND coalesce((SELECT max(s.delivery_fee) FROM services s WHERE s.id = ANY (fn_order_services(o.id))), 0) > 0`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('offer_free_flag_v1', current_date::text)");
+    console.log(`🎉 Offer: ${f.rowCount} earlier orders marked as "free delivery used".`);
+  }
+
+  // One time (2026-10-21): 📍 franchises made before centres existed get the middle of their town areas as centre
+  // (range 25 km). HQ can move it in Edit franchise.
+  const centreDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'franchise_centres_v1'");
+  if (!centreDone.rowCount) {
+    const c = await client.query(`UPDATE franchises f SET center_lat = round(a.lat, 6), center_lng = round(a.lng, 6)
+       FROM (SELECT franchise_id, avg(lat) AS lat, avg(lng) AS lng FROM localities
+              WHERE is_active AND NOT is_village AND franchise_id IS NOT NULL GROUP BY franchise_id) a
+      WHERE a.franchise_id = f.id AND f.center_lat IS NULL`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('franchise_centres_v1', current_date::text)");
+    console.log(`📍 ${c.rowCount} franchise centre(s) set from their areas (range 25 km).`);
+  }
+
+  // One time (2026-10-22): we only connect people — no price tags except the 💧 water can (₹25, our own team) and our
+  // delivery charges. Booked services (vehicle, personal care, tuition, pets…): the price is agreed with the partner.
+  // Shop items (milk, eggs, fruits, pooja…): as per the shop bill, like kirana and vegetables. Old orders keep theirs.
+  const pricesDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'prices_off_v1'");
+  if (!pricesDone.rowCount) {
+    const talk = await client.query(`UPDATE services s SET base_price = 0, price_unit = 'price on discussion'
+       WHERE s.is_active AND NOT s.home_card AND NOT s.allows_list AND NOT s.is_village AND coalesce(cardinality(s.source_service_ids), 0) = 0
+         AND NOT EXISTS (SELECT 1 FROM products p WHERE p.service_id = s.id)
+         AND s.skill_code NOT IN ('shared_car_agent')
+         AND s.category_id NOT IN (SELECT id FROM categories WHERE slug IN ('daily-workers', 'digital-services', 'events', 'vehicle-rental'))
+         AND (s.base_price > 0 OR s.price_unit IS NULL OR s.price_unit !~* 'discussion')`);
+    const bill = await client.query(`UPDATE services s SET price_on_bill = true, base_price = 0, price_unit = 'as per shop bill'
+       WHERE s.is_active AND NOT s.home_card AND NOT s.price_on_bill AND EXISTS (SELECT 1 FROM products p WHERE p.service_id = s.id)`);
+    // home page offer cards: no prices; AC service is not an everyday need; car & bike wash together
+    await client.query("UPDATE promotions SET is_active = false WHERE name = 'AC service tile'");
+    await client.query(`UPDATE promotions SET title = 'Car & bike wash at home', subtitle = 'Car or bike — washed at your door',
+                               link_type = 'category', link_value = 'vehicle' WHERE name = 'Car wash tile'`);
+    await client.query("UPDATE promotions SET subtitle = 'Toned milk · curd · ghee · paneer' WHERE name = 'Morning milk'");
+    await client.query("UPDATE promotions SET title = 'Free delivery on your first order 🎉' WHERE name = 'Free delivery launch offer'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('prices_off_v1', current_date::text)");
+    console.log(`💬 Prices off: ${talk.rowCount} services now "price on discussion", ${bill.rowCount} shops now "as per shop bill".`);
+  }
+
+  // One time (2026-10-22): a cleaner home page — the small offer cards that only repeated the sliding banner (fresh
+  // vegetables, meat & fish, milk) are switched off; HQ can switch them on again in Offers & promotions.
+  const homeDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_cleanup_v1'");
+  if (!homeDone.rowCount) {
+    const t = await client.query("UPDATE promotions SET is_active = false WHERE name IN ('Fresh vegetables tile', 'Fresh meat & fish tile', 'Fresh milk tile')");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_cleanup_v1', current_date::text)");
+    console.log(`🏠 Home: ${t.rowCount} repeated offer cards switched off.`);
+  }
+
+  // One time (2026-10-22): ⭐ the first "Our most popular services" cards, for all cities — HQ changes them in
+  // Popular on home. Vegetables, kirana, meat & fish open their shops; car & bike wash opens Vehicle Services.
+  const popularDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_popular_v1'");
+  if (!popularDone.rowCount) {
+    const cards = [
+      ['food-daily-fresh-vegetables', null, 'Fresh Vegetables', 'From the market to your door', null, null],
+      ['food-daily-kirana-delivery', null, 'Kirana', 'Groceries & daily needs', null, null],
+      ['food-daily-daily-fresh-meat-fish', null, 'Fresh Meat & Fish', 'Cut the way you like', null, null],
+      [null, 'vehicle', 'Car & Bike Wash', 'Washed at your door', 'vehicle-car-wash-at-home', null],
+    ];
+    let n = 0;
+    for (const [i, [svc, cat, title, sub, photoOf]] of cards.entries()) {
+      const r = await client.query(
+        `INSERT INTO home_popular (franchise_id, service_id, category_id, title, subtitle, image_url, image_credit, sort_order)
+         SELECT NULL, (SELECT id FROM services WHERE slug = $1), (SELECT id FROM categories WHERE slug = $2), $3, $4,
+                (SELECT image_url FROM services WHERE slug = $5), (SELECT image_credit FROM services WHERE slug = $5), $6
+          WHERE EXISTS (SELECT 1 FROM services WHERE slug = $1) OR EXISTS (SELECT 1 FROM categories WHERE slug = $2)`,
+        [svc, cat, title, sub, photoOf, i + 1]);
+      n += r.rowCount;
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_popular_v1', current_date::text)");
+    console.log(`⭐ Popular on home: ${n} cards for all cities.`);
+  }
+  // One time (2026-10-22): 🛠️ Shop For Me and 🚗 Share Ride as popular cards 5 and 6 (all cities; HQ edits / removes them
+  // like the others), and bright real photos with people on all six: our own in the apps' public/popular/ (no credit),
+  // the rest from Wikimedia Commons (licences that allow business use, credited on the Photo credits page) until ours
+  // replace them. A picture HQ already changed is kept: only empty ones, the old NonCommercial car-wash photo and the
+  // short-lived drawings are replaced.
+  const popPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_popular_photos_v2'");
+  if (!popPhotosDone.rowCount) {
+    for (const [slug, title, sub, sort] of [['shop-for-me', 'Shop For Me', 'Bulbs, taps, chargers — we buy & bring', 6],
+      ['share-ride', 'Share Ride', 'Seats to Hyderabad & nearby towns', 7]]) {
+      await client.query(
+        `INSERT INTO home_popular (franchise_id, category_id, title, subtitle, sort_order)
+         SELECT NULL, c.id, $2::text, $3::text, $4::int FROM categories c
+          WHERE c.slug = $1::text AND NOT EXISTS (SELECT 1 FROM home_popular WHERE title = $2::text)`,
+        [slug, title, sub, sort]);
+    }
+    const photos = [
+      [
+        "Fresh Vegetables",
+        "/popular/vegetables.jpg",
+        null
+      ],
+      [
+        "Kirana",
+        "/popular/kirana.jpg",
+        null
+      ],
+      [
+        "Fresh Meat & Fish",
+        "/popular/meat-fish.jpg",
+        null
+      ],
+      [
+        "Car & Bike Wash",
+        "/popular/car-wash.jpg",
+        null
+      ],
+      [
+        "Shop For Me",
+        "/popular/shop-for-me.jpg",
+        null
+      ],
+      [
+        "Share Ride",
+        "/popular/share-ride.jpg",
+        null
+      ]
+];
+    for (const [title, url, credit] of photos) {
+      await client.query(
+        `UPDATE home_popular SET image_url = $2, image_credit = $3
+          WHERE title = $1 AND (image_url IS NULL OR image_url = '' OR image_url LIKE '/art/popular-%'
+                OR image_url LIKE 'https://live.staticflickr.com/1003/536026002%' OR image_url LIKE '%Kannanelectrical.jpg%')`,
+        [title, url, credit]);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_popular_photos_v2', current_date::text)");
+    console.log('⭐ Popular on home: 6 cards with real photos.');
+  }
+  // One time (2026-10-22): the sliding banner shows what customers see nowhere else on the home page — our newer
+  // services — instead of repeats (free delivery = the banner on top; vegetables & meat = popular cards; 2 milk slides).
+  // The new slides are text-only for now (no photos yet); HQ edits them in Offers & promotions.
+  const slidesDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_slides_v2'");
+  if (!slidesDone.rowCount) {
+    await client.query(`UPDATE promotions SET is_active = false
+                         WHERE name IN ('Free delivery launch offer', 'Morning milk', 'Fresh vegetables 6–10 AM', 'Fresh meat & fish')`);
+    const slides = [
+      ['Share Ride slide', '🚗 Share Ride to Hyderabad & nearby towns', 'Book a seat in a shared car — pick your seat, pay the car owner by UPI', 'Find a ride', 'share-ride', '#6d28d9'],
+      ['Village Needs slide', '🏡 Village Needs — delivered to your village', 'Kirana, vegetables, meat & more — next-day delivery by our own team', 'Order for your village', 'village-needs', '#4d7c0f'],
+      ['Shop For Me slide', '🛠️ Shop For Me', 'Bulbs, taps, chargers… we buy it from a town shop and bring it to you', 'Write your list', 'shop-for-me', '#0f766e'],
+      ['Daily Workers slide', '👷 Daily workers near you', 'Masons, painters, helpers and more — call them directly, free', 'See workers', 'daily-workers', '#b45309'],
+    ];
+    for (const [i, [name, title, sub, cta, slug, bg]] of slides.entries()) {
+      await client.query(
+        `INSERT INTO promotions (name, title, subtitle, cta_text, link_type, link_value, placement, bg_color, text_color, sort_order, is_active)
+         SELECT $1::text, $2::text, $3::text, $4::text, 'category', $5::text, 'carousel', $6::text, '#ffffff', $7::int, true
+          WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE name = $1::text)`,
+        [name, title, sub, cta, slug, bg, 10 + i]);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_slides_v2', current_date::text)");
+    console.log('📢 Slides: repeats off; Share Ride, Village Needs, Shop For Me, Daily Workers added.');
+  }
+
+  // One time: the "Car & bike wash" offer card repeats the popular card above it → off (HQ can switch it on again).
+  const washDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_wash_tile_off_v1'");
+  if (!washDone.rowCount) {
+    await client.query("UPDATE promotions SET is_active = false WHERE name = 'Car wash tile'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_wash_tile_off_v1', current_date::text)");
+  }
+
+  // One time (2026-10-22): ⚡ Instant Delivery promise 15 → 10 minutes (shown on the home card, the top bar and
+  // checkout; agents see "within 10 min"). Only if still at the old 15, so an admin's own value is kept.
+  const tenDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'instant_10min_v1'");
+  if (!tenDone.rowCount) {
+    await client.query(
+      `UPDATE services SET eta_minutes = 10, price_unit = replace(price_unit, '15 min', '10 min'),
+              description = replace(description, 'about 15 minutes', 'about 10 minutes')
+        WHERE slug = 'food-daily-instant-delivery' AND eta_minutes = 15`
+    );
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('instant_10min_v1', current_date::text)");
+    console.log('⚡ Instant Delivery: within 10 minutes.');
   }
 
   // One time: 🚗 Vehicle Rental (car bookings) in every franchise. Car bookings go only to car partners with an

@@ -1,5 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api, uploadImage } from '../api.js';
+import { useAuth } from '../auth.jsx';
+
+// ---------- who is looking ----------
+// The same pages run in the franchise admin app (/admin) and in HQ (/super). HQ watches every city's day-to-day work
+// but changes nothing there — the city's franchise admin does (the API refuses it too).
+export function useStaff() {
+  const { user } = useAuth();
+  const hq = user?.role === 'superadmin';
+  return { hq, base: hq ? '/super' : '/admin' };
+}
+export function ViewOnlyNote({ what = 'this' }) {
+  return <div className="view-only-note">👁️ <b>View only.</b> The city's franchise admin manages {what} — HQ watches here.</div>;
+}
 
 // ---------- toasts ----------
 const ToastContext = createContext(() => {});

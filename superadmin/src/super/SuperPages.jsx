@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { rupees } from '../orderStatus.jsx';
 import { setScope } from '../scope.js';
 import { timeAgo, useLoad, useToast } from '../admin/ui.jsx';
-import { AdminForm, FrBadge } from './Franchises.jsx';
+import { AdminForm } from './Franchises.jsx';
 
 const useFranchises = () => useLoad(() => api('/super/franchise-options'));
 const FranchiseSelect = ({ value, onChange, list, all = 'All franchises' }) => (
@@ -156,119 +156,6 @@ export function Payments() {
           {list.data && !list.data.entries.length && <p className="muted panel-pad">No entries yet.</p>}
         </div>
       </section>
-    </div>
-  );
-}
-
-// ---------- platform reports ----------
-const ist = (d) => new Date(d.getTime() + 5.5 * 3600e3).toISOString().slice(0, 10);
-export function PlatformReports() {
-  const franchises = useFranchises();
-  const now = new Date();
-  const [range, setRange] = useState({ from: ist(new Date(now.getFullYear(), now.getMonth(), 1, 12)), to: ist(now), franchise: '' });
-  const rep = useLoad(() => api(`/super/reports?${new URLSearchParams({ from: range.from, to: range.to, ...(range.franchise && { franchise: range.franchise }) })}`), [range.from, range.to, range.franchise]);
-  const d = rep.data;
-  const preset = (days) => setRange({ ...range, from: ist(new Date(Date.now() - (days - 1) * 86400e3)), to: ist(new Date()) });
-
-  const csv = () => {
-    const cols = ['code', 'name', 'city', 'status', 'users', 'agents', 'orders', 'bookings', 'completed', 'cancelled', 'pending', 'revenue', 'delivery_charges'];
-    const money = ['commission', 'paid', 'pending', 'expenses'];
-    const head = [...cols, ...money.map((m) => `money_${m}`)];
-    const rows = d.franchises.map((f) => [...cols.map((c) => f[c]), ...money.map((m) => f.money[m])]);
-    const text = [head, ...rows].map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv' }));
-    a.download = `franchises_${range.from}_to_${range.to}.csv`;
-    a.click();
-  };
-
-  return (
-    <div className="stack">
-      <div className="toolbar">
-        <FranchiseSelect value={range.franchise} onChange={(v) => setRange({ ...range, franchise: v })} list={franchises.data} />
-        <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
-        <span className="muted">to</span>
-        <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
-        <div className="tabs">
-          <button onClick={() => preset(1)}>Today</button>
-          <button onClick={() => preset(7)}>7 days</button>
-          <button onClick={() => preset(30)}>30 days</button>
-        </div>
-        {d && <button className="btn btn-ghost btn-sm" onClick={csv}>⬇️ CSV</button>}
-      </div>
-      {rep.error && <div className="alert">{rep.error}</div>}
-      {!d && rep.loading && <div className="center-block"><div className="spinner" /></div>}
-      {d && (
-        <>
-          <div className="kpi-grid">
-            <div className="kpi"><span className="kpi-label">📦 Orders</span><span className="kpi-value">{d.totals.orders}</span></div>
-            <div className="kpi"><span className="kpi-label">🗓️ Bookings</span><span className="kpi-value">{d.totals.bookings}</span></div>
-            <div className="kpi"><span className="kpi-label">✅ Completed</span><span className="kpi-value">{d.totals.completed}</span></div>
-            <div className="kpi"><span className="kpi-label">❌ Cancelled</span><span className="kpi-value">{d.totals.cancelled}</span></div>
-            <div className="kpi"><span className="kpi-label">⏳ Pending</span><span className="kpi-value">{d.totals.pending}</span></div>
-            <div className="kpi"><span className="kpi-label">💰 Revenue</span><span className="kpi-value">{rupees(d.totals.revenue)}</span></div>
-            <div className="kpi"><span className="kpi-label">🚚 Delivery charges</span><span className="kpi-value">{rupees(d.totals.delivery_charges)}</span></div>
-            <div className="kpi"><span className="kpi-label">👥 Customers</span><span className="kpi-value">{d.totals.users}</span></div>
-          </div>
-          <section className="panel table-panel">
-            <div className="panel-pad"><h3>Dealer report</h3><p className="muted small">Orders and revenue are for the dates chosen; commission and payments are the running totals.</p></div>
-            <div className="table-scroll">
-              <table className="table">
-                <thead><tr><th>Dealer</th><th>Status</th><th>Users</th><th>Agents</th><th>Orders</th><th>Bookings</th><th>Revenue</th><th>Commission</th><th>Expenses</th><th>Pending payment</th><th>Completed</th><th>Cancelled</th><th aria-label="Open" /></tr></thead>
-                <tbody>
-                  {d.franchises.map((f) => (
-                    <tr key={f.id}>
-                      <td><b>{f.code}</b> · {f.city}<div className="muted small">{f.name}</div></td>
-                      <td><FrBadge status={f.status} /></td>
-                      <td>{f.users}</td>
-                      <td>{f.agents}</td>
-                      <td>{f.orders}</td>
-                      <td>{f.bookings}</td>
-                      <td className="nowrap">{rupees(f.revenue)}</td>
-                      <td className="nowrap">{rupees(f.money.commission)}</td>
-                      <td className="nowrap">{rupees(f.money.expenses)}</td>
-                      <td className={`nowrap ${f.money.pending > 0 ? 'text-warn' : ''}`}>{rupees(f.money.pending)}</td>
-                      <td>{f.completed}</td>
-                      <td>{f.cancelled}</td>
-                      <td><Link className="btn btn-ghost btn-sm" to={`/super/franchises/${f.id}?tab=reports`} onClick={() => setScope(f.id)}>Full report</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <div className="report-grid">
-            <section className="panel table-panel">
-              <div className="panel-pad"><h3>Service report</h3></div>
-              <div className="table-scroll">
-                <table className="table">
-                  <thead><tr><th>Service</th><th>City</th><th>Orders</th><th>Delivered</th></tr></thead>
-                  <tbody>
-                    {d.services.map((s, i) => (
-                      <tr key={i}><td>{s.icon} {s.service}</td><td>{s.city}</td><td>{s.orders}</td><td>{s.delivered}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!d.services.length && <p className="muted panel-pad">No orders in these dates.</p>}
-              </div>
-            </section>
-            <section className="panel table-panel">
-              <div className="panel-pad"><h3>Product report (top items)</h3></div>
-              <div className="table-scroll">
-                <table className="table">
-                  <thead><tr><th>Item</th><th>Qty</th><th>Orders</th></tr></thead>
-                  <tbody>
-                    {(d.report.top_items || []).map((x, i) => (
-                      <tr key={i}><td>{x.name} <span className="muted small">{x.unit}</span></td><td>{Number(x.qty)}</td><td>{x.orders}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!(d.report.top_items || []).length && <p className="muted panel-pad">No items in these dates.</p>}
-              </div>
-            </section>
-          </div>
-        </>
-      )}
     </div>
   );
 }

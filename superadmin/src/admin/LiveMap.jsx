@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import MapView, { secondsAgo } from '../components/MapView.jsx';
 import { AGENT_STATE, StateBadge, VEHICLES, statusLabel, usePoll } from '../orderStatus.jsx';
-import { useLoad } from './ui.jsx';
+import { useLoad, useStaff } from './ui.jsx';
 
 const STALE_SECONDS = 180; // older than 3 minutes = grey "last known" pin
 
@@ -13,6 +13,7 @@ const pinColor = (a) => (a.age_seconds > STALE_SECONDS ? '#94a3b8' : AGENT_STATE
 // Live map of every agent that has shared GPS. Click an agent to see their trail and current order.
 export default function LiveMap() {
   const [agents, setAgents] = useState(null);
+  const { base } = useStaff();
   const [filter, setFilter] = useState({ state: '', skill: '' });
   const [selected, setSelected] = useState(null);
   const [track, setTrack] = useState(null);
@@ -116,8 +117,8 @@ export default function LiveMap() {
               <p className="muted small">No active order.</p>
             )}
             <div className="live-links">
-              {track?.order && <Link className="link" to={`/admin/orders?open=${track.order.id}`}>Open order →</Link>}
-              <Link className="link" to={`/admin/agents?open=${current.user_id}`}>Agent profile →</Link>
+              {track?.order && <Link className="link" to={`${base}/orders?open=${track.order.id}`}>Open order →</Link>}
+              <Link className="link" to={`${base}/agents?open=${current.user_id}`}>Agent profile →</Link>
               <a className="link" href={`https://www.google.com/maps?q=${current.lat},${current.lng}`} target="_blank" rel="noreferrer">Google Maps ↗</a>
             </div>
           </div>

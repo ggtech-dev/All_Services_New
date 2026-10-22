@@ -984,6 +984,9 @@ export const DICT = {
   'Yes': ['అవును', 'हाँ'],
   No: ['కాదు', 'नहीं'],
   Loading: ['లోడ్ అవుతోంది', 'लोड हो रहा है'],
+  "within 10 min": ["10 నిమిషాల్లో","10 मिनट में"],
+  "Deliver within 10 min": ["10 నిమిషాల్లో డెలివరీ","10 मिनट में डिलीवरी"],
+  "Anything you need, at your door in about 10 minutes — kirana, vegetables or write anything else. Pay as per the shop bill.": ["మీకు కావాల్సింది ఏదైనా, సుమారు 10 నిమిషాల్లో మీ ఇంటికి — కిరాణా, కూరగాయలు లేదా ఇంకేదైనా రాయండి. షాప్ బిల్ ప్రకారం చెల్లించండి.","जो भी चाहिए, लगभग 10 मिनट में आपके दरवाज़े पर — किराना, सब्ज़ियाँ या कुछ और लिखें। दुकान के बिल के अनुसार भुगतान।"],
 };
 
 // Rupee prices with units: "₹30 per litre", "₹199 visit charge", "₹2,999 starting"
