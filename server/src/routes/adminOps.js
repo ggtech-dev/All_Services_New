@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import multer from 'multer';
+import { UPLOAD_DIR } from './admin.js';
 import { query, asActor } from '../db.js';
 import { requireAuth, requireStaff, requireSuper } from '../middleware/auth.js';
 import { LIVE_SQL, TRAIL_SQL, loadOrder } from './orders.js';
@@ -39,7 +42,7 @@ router.use('/subscriptions/:id', guard(
 // areas, villages and village charges, the home page's popular row. A city that is not run well: HQ talks to its
 // admin, or disables / suspends it.
 const HQ_SETS_UP = /^\/(localities|village-fees|popular|popular-own)(\/|$)/;
-const HQ_MAY_CHANGE = [/^\/service-types(\/|$)/, /^\/services\/\d+\/delivery-fee$/, /^\/delivery-charges\//, /^\/subscriptions\/services\/\d+$/, HQ_SETS_UP];
+const HQ_MAY_CHANGE = [/^\/meal-menu(\/|$)/, /^\/service-types(\/|$)/, /^\/services\/\d+\/delivery-fee$/, /^\/delivery-charges\//, /^\/subscriptions\/services\/\d+$/, HQ_SETS_UP];
 // 🗺️ a franchise admin asks HQ for a new area / village (Requests to HQ) instead of adding it
 router.use((req, res, next) => {
   if (!req.isSuper && req.method !== 'GET' && HQ_SETS_UP.test(req.path)) {
@@ -72,9 +75,18 @@ router.get('/orders-stats', h(async (req, res) => {
             'pending_requests', (SELECT count(*) FROM catalog_requests WHERE status = 'pending' AND ($1::int IS NULL OR franchise_id = $1)),
             'open_complaints', (SELECT count(*) FROM complaints WHERE status IN ('open', 'in_progress') AND ($1::int IS NULL OR franchise_id = $1)),
             'pending_cars', (SELECT count(*) FROM shared_cars WHERE status = 'pending' AND ($1::int IS NULL OR franchise_id = $1)),
+            -- 🚚 customers' reports about goods vehicles (transport.sql)
+            'transport_reports', (SELECT count(*) FROM transport_reports r JOIN transport_vehicles v ON v.id = r.vehicle_id
+                                   WHERE r.status = 'open' AND ($1::int IS NULL OR v.franchise_id = $1)),
             'worker_reports', (SELECT count(*) FROM worker_reports r JOIN workers w ON w.id = r.worker_id
                                 WHERE r.status = 'open' AND ($1::int IS NULL OR w.franchise_id = $1)),
             'new_digital', (SELECT count(*) FROM digital_requests WHERE status = 'new'),
+            'waitlist', (SELECT count(*) FROM area_waitlist WHERE status = 'waiting'), -- 📍 "Notify me" (HQ menu)
+            -- 📢 shops asking to advertise — HQ calls them (offers.sql; HQ menu)
+            'offer_requests', (SELECT count(*) FROM local_offers WHERE status = 'requested' AND ($1::int IS NULL OR franchise_id = $1)),
+            -- 🚫 products this city marked out of stock (stock.sql) — the My services menu count
+            'out_of_stock', (SELECT count(*) FROM franchise_products fp JOIN products p ON p.id = fp.product_id AND p.is_active
+                              WHERE NOT fp.in_stock AND ($1::int IS NULL OR fp.franchise_id = $1)),
             -- ⏰ open orders nobody took / finished in time (overdue.sql)
             'overdue', (SELECT count(*) FROM orders o WHERE o.status IN ('placed', 'assigned', 'picked_up')
                           AND ($1::int IS NULL OR o.franchise_id = $1) AND fn_order_overdue(o) IS NOT NULL),
@@ -689,5 +701,100 @@ const saveType = (withCode) => h(async (req, res) => {
 });
 router.post('/service-types', requireSuper, saveType(false));
 router.put('/service-types/:code', requireSuper, saveType(true));
+
+
+// ---------- 🍱 Tomorrow's Meal: the day's menu (homefood.sql) ----------
+// The franchise admin (or HQ with a city chosen) sets each day's menu: the curries / charus customers choose from for
+// lunch and dinner, and a photo of the menu card. The same page shows what the kitchen must cook that day.
+const mealPhoto = multer({
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (req, file, cb) => cb(null, `menu-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${path.extname(file.originalname).toLowerCase()}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|png|webp)$/.test(file.mimetype);
+    cb(ok ? null : Object.assign(new Error('Only JPG, PNG or WEBP photos'), { status: 400 }), ok);
+  },
+});
+const mealCity = (req) => {
+  if (req.scope == null) throw Object.assign(new Error('Choose the city at the top first'), { status: 400 });
+  return req.scope;
+};
+const mealDate = (v) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) throw Object.assign(new Error('Choose the date'), { status: 400 });
+  return v;
+};
+// ?date=YYYY-MM-DD (default: the day customers are ordering for now)
+router.get('/meal-menu', h(async (req, res) => {
+  const city = mealCity(req);
+  const next = (await query('SELECT fn_meal_date()::text AS d')).rows[0].d; // a plain day: 2026-10-26
+  const date = req.query.date ? mealDate(req.query.date) : next;
+  const [items, photo, kitchen, plates] = await Promise.all([
+    query('SELECT id, meal, kind, name FROM meal_menu WHERE franchise_id = $1 AND menu_date = $2 ORDER BY meal DESC, kind, id', [city, date]),
+    query('SELECT image_url FROM meal_menu_photo WHERE franchise_id = $1 AND menu_date = $2', [city, date]),
+    query('SELECT fn_meal_kitchen($1, $2) AS k', [city, date]),
+    // this city's prices (HQ sets them — homefood.sql)
+    query(`SELECT i.item, fn_home_food_price($1, i.item) AS price
+             FROM unnest(ARRAY['veg', 'chicken', 'mutton', 'fish', 'cook_hour', 'cook_half']) WITH ORDINALITY AS i(item, n) ORDER BY n`, [city]),
+  ]);
+  res.json({ date, ordering_for: next, items: items.rows, photo: photo.rows[0]?.image_url || null, kitchen: kitchen.rows[0].k, plates: plates.rows,
+    cutoff_hour: Number((await query("SELECT fn_setting_num('meal_cutoff_hour', 21) AS h")).rows[0].h) });
+}));
+// body: { date, meal: lunch|dinner, kind: curry|charu, name }
+router.post('/meal-menu', h(async (req, res) => {
+  const city = mealCity(req);
+  const b = req.body || {};
+  const name = String(b.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  if (!['lunch', 'dinner'].includes(b.meal) || !['curry', 'charu'].includes(b.kind)) return res.status(400).json({ error: 'Choose lunch / dinner and curry / charu' });
+  if (name.length < 2) return res.status(400).json({ error: 'Write the dish name' });
+  const { rows } = await asActor(req.user.id, (db) => db.query(
+    `INSERT INTO meal_menu (franchise_id, menu_date, meal, kind, name) VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (franchise_id, menu_date, meal, kind, name) DO UPDATE SET name = EXCLUDED.name RETURNING id, meal, kind, name`,
+    [city, mealDate(b.date), b.meal, b.kind, name]));
+  res.status(201).json(rows[0]);
+}));
+router.delete('/meal-menu/:id', h(async (req, res, next) => {
+  if (!/^\d{1,9}$/.test(req.params.id)) return next(); // e.g. /meal-menu/photo
+  const city = mealCity(req);
+  const { rowCount } = await asActor(req.user.id, (db) => db.query('DELETE FROM meal_menu WHERE id = $1 AND franchise_id = $2', [Number(req.params.id), city]));
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  res.status(204).end();
+}));
+// 💰 the franchise asks HQ for a different price in its city (Requests to HQ); HQ sets prices itself on its own page
+router.post('/meal-menu/price-request', h(async (req, res) => {
+  if (req.isSuper) return res.status(400).json({ error: 'HQ sets prices on the "Food & cook prices" page' });
+  const city = mealCity(req);
+  const b = req.body || {};
+  const price = Number(b.price);
+  const { rows } = await asActor(req.user.id, (db) => db.query('SELECT * FROM fn_request_price($1, $2, $3, $4, $5)',
+    [city, req.user.id, String(b.item || ''), Number.isFinite(price) ? price : null, typeof b.note === 'string' ? b.note : null]));
+  res.status(201).json(rows[0]);
+}));
+// copy a day's dishes to another day (e.g. "same as today") — keeps the dishes already there
+router.post('/meal-menu/copy', h(async (req, res) => {
+  const city = mealCity(req);
+  const b = req.body || {};
+  const { rowCount } = await asActor(req.user.id, (db) => db.query(
+    `INSERT INTO meal_menu (franchise_id, menu_date, meal, kind, name)
+     SELECT franchise_id, $3, meal, kind, name FROM meal_menu WHERE franchise_id = $1 AND menu_date = $2 ON CONFLICT DO NOTHING`,
+    [city, mealDate(b.from), mealDate(b.to)]));
+  res.json({ copied: rowCount });
+}));
+// the menu-card photo of a day (multipart: image + date)
+router.post('/meal-menu/photo', mealPhoto.single('image'), h(async (req, res) => {
+  const city = mealCity(req);
+  if (!req.file) return res.status(400).json({ error: 'Choose a photo' });
+  const url = `/uploads/${req.file.filename}`;
+  await asActor(req.user.id, (db) => db.query(
+    `INSERT INTO meal_menu_photo (franchise_id, menu_date, image_url) VALUES ($1, $2, $3)
+     ON CONFLICT (franchise_id, menu_date) DO UPDATE SET image_url = EXCLUDED.image_url, updated_at = now()`, [city, mealDate(req.body?.date), url]));
+  res.status(201).json({ image_url: url });
+}));
+router.delete('/meal-menu/photo', h(async (req, res) => {
+  const city = mealCity(req);
+  await asActor(req.user.id, (db) => db.query('DELETE FROM meal_menu_photo WHERE franchise_id = $1 AND menu_date = $2', [city, mealDate(req.query.date)]));
+  res.status(204).end();
+}));
 
 export default router;

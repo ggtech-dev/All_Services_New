@@ -19,6 +19,9 @@ const Reports = lazy(() => import('./admin/Reports.jsx'));
 const Activity = lazy(() => import('./admin/Activity.jsx'));
 const Areas = lazy(() => import('./admin/Areas.jsx'));
 const PopularAdmin = lazy(() => import('./admin/PopularAdmin.jsx')); // ⭐ popular cards on the home page
+const TransportAdmin = lazy(() => import('./admin/TransportAdmin.jsx')); // 🚚 goods vehicles (the franchise adds; HQ sees)
+const OffersAdmin = lazy(() => import('./admin/OffersAdmin.jsx')); // 📢 shops' offers (HQ approves; the franchise sees its city)
+const MealAdmin = lazy(() => import('./admin/MealAdmin.jsx')); // 🍱 tomorrow's meals: daily menu, photo, kitchen count
 const Shops = lazy(() => import('./admin/Shops.jsx'));
 const Subscriptions = lazy(() => import('./admin/Subscriptions.jsx'));
 const ShareRideAdmin = lazy(() => import('./admin/ShareRideAdmin.jsx'));
@@ -53,6 +56,9 @@ const operationsRoutes = (
     <Route path="workers" element={<WorkersAdmin />} />
     <Route path="areas" element={<Areas />} />
     <Route path="popular" element={<PopularAdmin />} />
+    <Route path="meals" element={<MealAdmin />} />
+    <Route path="offers" element={<OffersAdmin />} />
+    <Route path="transport" element={<TransportAdmin />} />
     <Route path="shops" element={<Shops />} />
     <Route path="service-types" element={<ServiceTypes />} />
     <Route path="activity" element={<Activity />} />

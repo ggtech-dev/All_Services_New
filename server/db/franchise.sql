@@ -51,9 +51,10 @@ CREATE TABLE IF NOT EXISTS catalog_requests (
 CREATE INDEX IF NOT EXISTS catalog_requests_idx ON catalog_requests(status, created_at DESC);
 -- 🗺️ areas and villages are set by HQ; a franchise asks for a new one ('area') or to switch one off ('area_off') — geo.sql
 -- ⭐ … and to add a service to the home page's popular row ('popular') or take one off it ('popular_off') — popular.sql
+-- 🍱 … and a different price for a meal plate / the cook's rate in their city ('price') — homefood.sql
 ALTER TABLE catalog_requests DROP CONSTRAINT IF EXISTS catalog_requests_kind_check;
 ALTER TABLE catalog_requests ALTER COLUMN kind TYPE VARCHAR(12);
-ALTER TABLE catalog_requests ADD CONSTRAINT catalog_requests_kind_check CHECK (kind IN ('service', 'product', 'area', 'area_off', 'popular', 'popular_off'));
+ALTER TABLE catalog_requests ADD CONSTRAINT catalog_requests_kind_check CHECK (kind IN ('service', 'product', 'area', 'area_off', 'popular', 'popular_off', 'price'));
 ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS popular_id INT; -- the popular card to take off (home_popular, popular.sql)
 ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS area_lat     NUMERIC(9,6);
 ALTER TABLE catalog_requests ADD COLUMN IF NOT EXISTS area_lng     NUMERIC(9,6);
@@ -549,15 +550,7 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
 $$;
 
 -- Products of one service as seen by one franchise (for switching single products off/on).
-CREATE OR REPLACE FUNCTION fn_franchise_products(p_franchise INT, p_service_id INT) RETURNS JSONB
-LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
-  SELECT coalesce(jsonb_agg(jsonb_build_object(
-           'id', p.id, 'name', p.name, 'brand', p.brand, 'unit', p.unit, 'icon', p.icon, 'image_url', p.image_url,
-           'section', p.section, 'is_active', p.is_active, 'only_assigned', p.only_assigned,
-           'enabled', fn_product_visible(p_franchise, p.id))
-         ORDER BY p.sort_order, p.id), '[]'::jsonb)
-    FROM products p WHERE p.service_id = p_service_id
-$$;
+-- fn_franchise_products (the products of a service in one franchise, with the city's stock): stock.sql
 
 -- ============ complaints ============
 

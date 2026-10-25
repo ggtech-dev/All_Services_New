@@ -12,13 +12,17 @@ import Account from './pages/Account.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import OrderTrack from './pages/OrderTrack.jsx';
 import Credits from './pages/Credits.jsx';
+import MealPage from './pages/MealPage.jsx';
 import About from './pages/About.jsx';
 import { MyTickets, RideBooking, RideSeats, ShareRideSearch } from './pages/ShareRide.jsx';
 import Workers from './pages/Workers.jsx';
 import Digital from './pages/Digital.jsx';
 import SearchPage from './pages/SearchPage.jsx';
+import { AdvertisePage, MyOffers, OfferDetail, OffersPage } from './pages/Offers.jsx';
+import Transport from './pages/Transport.jsx';
 import Welcome, { welcomeSeen } from './pages/Welcome.jsx';
 import BottomTabs from './components/BottomTabs.jsx';
+import HelpFab from './components/HelpFab.jsx';
 
 // 👤 All Services — customer app: shop, book services, track orders.
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
@@ -38,6 +42,7 @@ function Open({ children }) {
       <Navbar />
       <main className="container">{children}</main>
       <BottomTabs />
+      <HelpFab />
     </>
   );
 }
@@ -78,6 +83,12 @@ export default function App() {
       <Route path="/account" element={<Protected><Account /></Protected>} />
       <Route path="/orders/:id" element={<Protected><OrderTrack /></Protected>} />
       <Route path="/credits" element={<Open><Credits /></Open>} />
+      <Route path="/meal" element={<Open><MealPage /></Open>} />
+      <Route path="/transport" element={<Open><Transport /></Open>} />
+      <Route path="/offers" element={<Open><OffersPage /></Open>} />
+      <Route path="/offers/:id" element={<Open><OfferDetail /></Open>} />
+      <Route path="/advertise" element={<Open><AdvertisePage /></Open>} />
+      <Route path="/my-offers" element={<Protected><MyOffers /></Protected>} />
       <Route path="/about" element={<Open><About /></Open>} />
       {/* 🚗 Share Ride: search and seat maps are open to guests; booking, paying and tickets need an account */}
       {/* 👷 free workers list (numbers after login) · 💡 requests to our team (sending needs login) */}

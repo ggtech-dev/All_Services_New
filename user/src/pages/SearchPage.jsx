@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, Search } from 'lucide-react';
 import { api } from '../api.js';
+import { searchAlso } from '../searchWords.js';
 import Skeleton from '../components/Skeleton.jsx';
 import { CategoryIcon } from '../components/icons.jsx';
 
@@ -9,7 +10,10 @@ import { CategoryIcon } from '../components/icons.jsx';
 // Categories with a page of their own (Share Ride, Daily Workers, Digital Services) open that page.
 const OWN_PAGE = ['share-ride', 'daily-workers', 'digital-services'];
 const serviceLink = (s) =>
-  OWN_PAGE.includes(s.category_slug) ? `/category/${s.category_slug}`
+  s.category_slug === 'tomorrow-food' ? '/meal' // 🍱 tomorrow's menu
+  : s.category_slug === 'offers' ? '/offers' // 📢 local shops' offers
+  : s.category_slug === 'goods-transport' ? '/transport' // 🚚 goods vehicles
+    : OWN_PAGE.includes(s.category_slug) ? `/category/${s.category_slug}`
     : s.type_count > 0 ? `/care/${s.slug}`
     : s.product_count > 0 || s.allows_list ? `/service/${s.slug}`
     : `/checkout?service=${s.slug}`;
@@ -25,7 +29,9 @@ export default function SearchPage() {
     setQ(term);
     if (term.trim().length < 2) return setRes({ services: [], products: [] });
     setRes(null);
-    api(`/search?q=${encodeURIComponent(term)}`).then(setRes).catch(() => setRes({ services: [], products: [] }));
+    // Telugu / Hindi / spoken-Telugu words also search the English names they stand for
+    const also = searchAlso(term);
+    api(`/search?q=${encodeURIComponent(term)}${also.length ? `&also=${encodeURIComponent(also.join('|'))}` : ''}`).then(setRes).catch(() => setRes({ services: [], products: [] }));
   }, [term]);
 
   const submit = (e) => {

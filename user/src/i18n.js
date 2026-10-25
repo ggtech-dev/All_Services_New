@@ -5,8 +5,8 @@ import { DICT, PATTERNS } from './i18n-dict.js';
 // is replaced from the dictionary in i18n-dict.js as it appears. Anything inside translate="no" (admin / HQ pages,
 // people's names typed by users…) is left as it is. Changing the language reloads the page once.
 export const LANGS = [
-  { code: 'en', label: 'English', short: 'A' },
-  { code: 'te', label: 'తెలుగు', short: 'అ' },
+  { code: 'en', label: 'English', short: 'EN' },
+  { code: 'te', label: 'తెలుగు', short: 'తె' },
 ];
 const KEY = 'as_lang';
 const COL = { te: 0 }; // column of the translation in i18n-dict.js

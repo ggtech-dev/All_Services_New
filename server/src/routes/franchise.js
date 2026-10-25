@@ -43,6 +43,26 @@ router.get('/services/:sid/products', h(async (req, res) => {
   res.json(rows[0].list);
 }));
 
+// 🚫 out of stock in this city (stock.sql): the franchise admin's switch; HQ with a city chosen uses it too.
+router.get('/out-of-stock', h(async (req, res) => {
+  if (!needOne(req, res)) return;
+  const { rows } = await query('SELECT fn_city_out_of_stock($1) AS list', [req.scope]);
+  res.json(rows[0].list);
+}));
+// body: { in_stock: true|false }
+router.patch('/products/:pid/stock', h(async (req, res) => {
+  if (!needOne(req, res)) return;
+  if (typeof req.body?.in_stock !== 'boolean') return res.status(400).json({ error: 'Choose in stock or out of stock' });
+  const { rows } = await query('SELECT fn_set_city_stock($1, $2, $3, $4) AS p', [req.scope, id(req.params.pid), req.body.in_stock, req.user.id]);
+  res.json(rows[0].p);
+}));
+// "All back in stock" — ?service=<id> for one service, else every product of the city
+router.post('/restock', h(async (req, res) => {
+  if (!needOne(req, res)) return;
+  const { rows } = await query('SELECT fn_city_restock($1, $2, $3) AS n', [req.scope, id(req.query.service), req.user.id]);
+  res.json({ restocked: rows[0].n });
+}));
+
 // Categories for the "request a new service" form.
 router.get('/categories', h(async (req, res) => {
   const { rows } = await query('SELECT id, name, icon FROM categories WHERE is_active ORDER BY sort_order');

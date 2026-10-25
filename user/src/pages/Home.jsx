@@ -4,7 +4,6 @@ import { BadgeCheck, ChevronRight, Droplets, RotateCcw, Search, Truck, Wallet, Z
 import { api } from '../api.js';
 import Promotions from '../components/Promotions.jsx';
 import SmartImage from '../components/SmartImage.jsx';
-import SupportLinks from '../components/SupportLinks.jsx';
 import { InstallBanner } from '../components/InstallApp.jsx';
 import { useCart } from '../cart.jsx';
 import { useAuth } from '../auth.jsx';
@@ -17,6 +16,7 @@ const SHORT = {
   'food-daily': 'Food & Daily', 'home-services': 'Home Services', 'shop-for-me': 'Shop For Me', 'village-needs': 'Village Needs',
   vehicle: 'Vehicle Services', 'daily-workers': 'Daily Workers', personal: 'Personal Care', events: 'Events',
   'vehicle-rental': 'Car Rental', 'share-ride': 'Share Ride', 'digital-services': 'Digital Services', health: 'Health',
+  'book-your-cook': 'Book Your Cook', 'tomorrow-food': 'Order Food for Tomorrow', offers: 'Offers Near You', 'goods-transport': 'Goods Transport',
 };
 // India time: Good Morning / Afternoon / Evening
 const greeting = () => {
@@ -129,7 +129,6 @@ export default function Home() {
       <Promotions hideFreeDelivery={!!user && !(freeLeft > 0)} />
       <InstallBanner />
       <footer className="home-footer">
-        <SupportLinks title="Need help? Talk to us" />
         <nav className="home-footer-links" aria-label="About All Services">
           <Link to="/about">About us</Link>
           <Link to="/about#privacy">Privacy</Link>

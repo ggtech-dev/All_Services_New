@@ -72,6 +72,9 @@ router.get('/quote', h(async (req, res) => {
   const q = rows[0]?.q;
   if (!q) return res.status(400).json({ error: 'Instant delivery is not available right now' });
   // + shop-bill items, and the delivery time window with the slots the customer can pick
+  // 🍱 a meal cart: exactly one slot — that meal on its day (homefood.sql)
+  const meal = products.length ? (await query('SELECT fn_meal_cart($1) AS m', [products])).rows[0].m : null;
+  if (meal?.meals) Object.assign(q, { slots: meal.mixed || meal.others ? [] : [meal.slot], meal });
   res.json({ ...q, delivery_fee: Number(q.delivery_fee), base_fee: Number(q.base_fee) });
 }));
 
@@ -104,7 +107,7 @@ router.get('/home', h(async (req, res) => {
                       'service', jsonb_build_object('id', ps.id, 'name', ps.name, 'category_icon', c.icon, 'price_on_bill', ps.price_on_bill))
                     ORDER BY i.id)
                FROM order_items i
-               JOIN products p ON p.id = i.product_id AND p.is_active AND p.in_stock
+               JOIN products p ON p.id = i.product_id AND p.is_active AND fn_product_in_stock(o.franchise_id, p.id)
                JOIN services ps ON ps.id = p.service_id AND ps.is_active
                LEFT JOIN categories c ON c.id = ps.category_id
               WHERE i.order_id = o.id) AS items
@@ -131,6 +134,26 @@ router.get('/home', h(async (req, res) => {
     if (again.length === 3) break;
   }
   res.json({ active, again });
+}));
+
+// 📍 Saved addresses for the location box: the last 3 different delivery addresses (same house + area = one), only in
+// areas we still serve, with the pin of the latest order there.
+router.get('/addresses', h(async (req, res) => {
+  const { rows } = await query(
+    `SELECT * FROM (
+       SELECT DISTINCT ON (lower(trim(o.address_line)), o.locality_id)
+              o.contact_name, o.contact_phone, o.address_line, o.landmark, o.locality_id, o.pincode,
+              o.dest_lat::float AS lat, o.dest_lng::float AS lng, o.created_at,
+              l.name AS area, l.is_village, f.id AS franchise_id, f.city
+         FROM orders o
+         JOIN localities l ON l.id = o.locality_id AND l.is_active
+         JOIN franchises f ON f.id = l.franchise_id AND f.status = 'active'
+        WHERE o.customer_id = $1 AND trim(coalesce(o.address_line, '')) <> ''
+        ORDER BY lower(trim(o.address_line)), o.locality_id, o.created_at DESC
+     ) a ORDER BY created_at DESC LIMIT 3`,
+    [req.user.id]
+  );
+  res.json(rows);
 }));
 
 // Last address used, to pre-fill checkout.
@@ -166,19 +189,29 @@ router.post('/', orderPhotoUpload(['list_photo']), h(async (req, res) => {
       let event = null;
       let trip = null;
       let visit = null;
+      let cook = null;
+      let meal = null;
       const form = (x) => JSON.stringify(x && typeof x === 'object' ? x : null);
       if (serviceId) {
         const k = (await db.query(
           `SELECT fn_is_event_service($1) AS e, fn_is_trip_service($1) AS t,
                   (SELECT parent_id IS NOT NULL FROM services WHERE id = $1) AS v,
-                  EXISTS (SELECT 1 FROM services WHERE parent_id = $1) AS g`, [serviceId])).rows[0];
+                  EXISTS (SELECT 1 FROM services WHERE parent_id = $1) AS g, fn_is_cook_service($1) AS c`, [serviceId])).rows[0];
         if (k.g) throw Object.assign(new Error('Choose the type of visit (doctor, nurse, BP check…)'), { status: 400 });
         if (k.e) event = (await db.query('SELECT fn_check_event($1) AS e', [form(b.event)])).rows[0].e;
         if (k.t) trip = (await db.query('SELECT fn_check_trip($1) AS t', [form(b.trip)])).rows[0].t;
         // 🏠 a Home Doctor Visit type: now, or a date & time
         if (k.v) visit = (await db.query('SELECT fn_check_visit($1) AS v', [form(b.visit)])).rows[0].v;
+        // 👩‍🍳 Book a Cook: day, start time, hours and the price for them (homefood.sql) — never taken from the app
+        // (the delivery area's city sets the rates)
+        const area = /^\d{1,9}$/.test(String(b.contact?.locality_id ?? '')) ? Number(b.contact.locality_id) : null;
+        if (k.c) cook = (await db.query('SELECT fn_check_cook($1, $2) AS c', [form(b.cook), area])).rows[0].c;
+      } else if (items?.length) {
+        // 🍱 Tomorrow's Meal: the meal rules and the slot (homefood.sql); null = not a meal order
+        meal = (await db.query('SELECT fn_check_meal_cart($1) AS m', [JSON.stringify(items)])).rows[0].m;
+        if (meal) b.slot = meal.slot;
       }
-      const ahead = event || trip || visit;
+      const ahead = event || trip || visit || cook;
       const placed = (await db.query('SELECT * FROM fn_place_order($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [
         req.user.id, items ? JSON.stringify(items) : null, serviceId,
         JSON.stringify(b.contact || {}), ahead ? ahead.label : b.slot || null, b.notes || null,
@@ -188,6 +221,12 @@ router.post('/', orderPhotoUpload(['list_photo']), h(async (req, res) => {
       // "Book again": the earlier booking a partner gave back is cancelled together with this new one
       if (/^\d{1,9}$/.test(String(b.rebook_of ?? ''))) {
         await db.query('CALL sp_rebook_cancel($1,$2,$3)', [Number(b.rebook_of), req.user.id, placed.id]);
+      }
+      // 🍱 a meal order: delivered on its meal day · 👩‍🍳 a cook booking: its price for the hours, the day (homefood.sql)
+      if (meal || cook) {
+        if (meal) await db.query('CALL sp_meal_order($1, $2)', [placed.id, meal.date]);
+        else await db.query('CALL sp_cook_booking($1, $2)', [placed.id, JSON.stringify(cook)]);
+        return (await db.query('SELECT * FROM orders WHERE id = $1', [placed.id])).rows[0];
       }
       if (!ahead) return placed;
       return (await db.query('UPDATE orders SET event_details = $2, trip_details = $3, visit_details = $4 WHERE id = $1 RETURNING *',

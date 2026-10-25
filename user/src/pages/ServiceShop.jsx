@@ -7,6 +7,7 @@ import { qtyLabel, windowLabel } from '../qty.js';
 import PhotoPicker from '../components/PhotoPicker.jsx';
 import ScrollRow from '../components/ScrollRow.jsx';
 import Skeleton from '../components/Skeleton.jsx';
+import { useCity } from '../scope.js';
 
 const rupees = (v) => `₹${Number(v).toLocaleString('en-IN')}`;
 const SOURCE_ICON = { 'Kirana Delivery': '🛒', 'Fresh Vegetables': '🥬', 'Daily Fresh Meat & Fish': '🍗' };
@@ -24,11 +25,17 @@ export default function ServiceShop() {
   const [section, setSection] = useState('');
   const cart = useCart();
 
+  // the city's products and stock: loaded again when the city is known / changed (first visit, location box)
+  const city = useCity();
   useEffect(() => {
     setData(null);
     setError('');
-    api(`/services/${slug}`).then(setData).catch((e) => setError(e.message));
   }, [slug]);
+  useEffect(() => {
+    let live = true;
+    api(`/services/${slug}`).then((d) => live && setData(d)).catch((e) => live && setError(e.message));
+    return () => { live = false; };
+  }, [slug, city]);
 
   const sources = data?.sources || [];
   const isInstant = sources.length > 0; // ⚡ Instant or 🏡 Village Needs (both show other shops + "Others")

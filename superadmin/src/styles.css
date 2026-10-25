@@ -638,7 +638,9 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 2
 
 /* ---------- polish: page transitions ---------- */
 @keyframes route-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-main.container > *, .agent-main > *, .route-in { animation: route-in .28s ease-out both; }
+/* "backwards", not "both": once the page is in, no transform is left on it — a transform would pin pop-ups
+   (position: fixed) to the page instead of the screen, so on a long page they opened out of sight */
+main.container > *, .agent-main > *, .route-in { animation: route-in .28s ease-out backwards; }
 .panel, .order-row, .category-card, .avail-card { transition: box-shadow .2s, transform .2s, border-color .2s; }
 .order-row:hover { transform: translateY(-1px); }
 img { transition: opacity .3s; }

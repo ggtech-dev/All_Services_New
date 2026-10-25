@@ -149,6 +149,8 @@ BEGIN
     UPDATE catalog_requests SET locality_id = l.id WHERE id = r.id;
   ELSIF r.kind = 'area_off' THEN
     UPDATE localities SET is_active = false WHERE id = r.locality_id AND franchise_id = r.franchise_id;
+  ELSIF r.kind = 'price' THEN
+    PERFORM fn_approve_price_request(r); -- 🍱 a meal plate / cook rate for the city (homefood.sql)
   ELSE
     PERFORM fn_approve_popular_request(r); -- ⭐ the home page's popular row (popular.sql)
   END IF;

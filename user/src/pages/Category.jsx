@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { api, formatEta, formatPrice, priceTalk } from '../api.js';
+import { api, formatPrice, priceTalk } from '../api.js';
 import PartnerNote from '../components/PartnerNote.jsx';
 import SmartImage from '../components/SmartImage.jsx';
 import { windowLabel } from '../qty.js';
 import Skeleton from '../components/Skeleton.jsx';
+
+// How soon the partner / delivery comes — said plainly, so "30 min" is not read as how long the work takes.
+const etaText = (m) => (m < 60 ? `Arrives in ~${m} min` : m < 1440 ? `Arrives in ~${Math.round(m / 60)} hr` : `Within ${Math.round(m / 1440)} day`);
+// Events are priced per function after a talk: ask for a quote rather than "book".
+const QUOTE_CATEGORIES = ['events'];
 
 export default function Category() {
   const { slug } = useParams();
@@ -26,6 +31,10 @@ export default function Category() {
   if (slug === 'share-ride') return <Navigate to="/share-ride" replace />; // 🚗 search + seat booking page
   if (slug === 'daily-workers') return <Navigate to="/workers" replace />; // 👷 free workers list
   if (slug === 'digital-services') return <Navigate to="/digital" replace />; // 💡 requests to our team
+  if (slug === 'book-your-cook') return <Navigate to="/checkout?service=home-food-book-a-cook" replace />; // 👩‍🍳 straight to the booking
+  if (slug === 'tomorrow-food') return <Navigate to="/meal" replace />; // 🍱 tomorrow's menu
+  if (slug === 'offers') return <Navigate to="/offers" replace />; // 📢 local shops' offers
+  if (slug === 'goods-transport') return <Navigate to="/transport" replace />; // 🚚 goods vehicles
   if (error) return <div className="alert">{error} — <Link to="/">back home</Link></div>;
   if (!data) return <Skeleton variant="grid" />;
   // a category with just one shop (🏡 Village Needs) opens that shop straight away
@@ -61,7 +70,8 @@ export default function Category() {
               <h3>{s.name}</h3>
               <div className="service-meta">
                 <span className="price">{priceTalk(s) ? '💬 Service charge: talk to provider' : s.price_on_bill ? (s.product_count > 0 ? 'Market price' : 'As per shop bill') : formatPrice(s.base_price, s.price_unit)}</span>
-                <span className="eta">{s.window_from != null ? `🕕 ${windowLabel(s.window_from, s.window_to)}` : `⏱ ${formatEta(s.eta_minutes)}`}</span>
+                {s.window_from != null ? <span className="eta">{`🕕 ${windowLabel(s.window_from, s.window_to)}`}</span>
+                  : s.eta_minutes != null && <span className="eta"><span aria-hidden="true">⏱ </span>{etaText(s.eta_minutes)}</span>}
               </div>
               {s.type_count > 0 ? (
                 <Link to={`/care/${s.slug}`} className="btn btn-primary btn-sm btn-center" style={{ '--accent': category.color }}>
@@ -77,7 +87,7 @@ export default function Category() {
                 </Link>
               ) : (
                 <Link to={`/checkout?service=${s.slug}`} className="btn btn-primary btn-sm btn-center" style={{ '--accent': category.color }}>
-                  Book now
+                  {QUOTE_CATEGORIES.includes(category.slug) && priceTalk(s) ? 'Request a quote' : 'Book now'}
                 </Link>
               )}
             </div>

@@ -4,7 +4,7 @@ import { isIOS, useInstall, useOnline } from '../pwa.js';
 const DISMISS_KEY = 'as_install_dismissed';
 const dismissedRecently = () => {
   try {
-    return Date.now() - Number(localStorage.getItem(DISMISS_KEY) || 0) < 14 * 864e5; // ask again after 2 weeks
+    return Date.now() - Number(localStorage.getItem(DISMISS_KEY) || 0) < 30 * 864e5; // closed with ✕: ask again after 30 days
   } catch {
     return false;
   }
@@ -33,7 +33,7 @@ export function InstallButton({ className = 'btn btn-ghost btn-block', label = '
   );
 }
 
-// A card on the home screen, offered once (again after 2 weeks if dismissed).
+// A slim bar on the home screen, offered once (again after 30 days if closed).
 export function InstallBanner({ who = 'customer' }) {
   const { app, run, modal } = useInstallAction();
   const [hidden, setHidden] = useState(dismissedRecently);
@@ -46,17 +46,16 @@ export function InstallBanner({ who = 'customer' }) {
     }
     setHidden(true);
   };
+  // one slim line: icon · "Get the All Services app" · Install · ✕
   return (
-    <div className="install-banner" role="region" aria-label="Install the app">
-      <img src="/icons/icon-192.png" alt="" width="44" height="44" />
-      <div className="install-text">
-        <b>Install the All Services app</b>
-        <small>{who === 'agent' ? 'Get new orders faster — opens like an app from your home screen.' : 'Order faster — opens like an app, right from your home screen.'}</small>
-      </div>
-      <div className="install-actions">
-        <button type="button" className="btn btn-primary btn-sm" onClick={async () => (await run()) && setHidden(true)}>📲 Install</button>
-        <button type="button" className="link-btn" onClick={dismiss}>Not now</button>
-      </div>
+    <div className="install-bar" role="region" aria-label="Install the app">
+      <img src="/icons/icon-192.png" alt="" width="30" height="30" />
+      <p className="install-bar-text">
+        <b>Get the All Services app</b>
+        <span className="install-bar-sub">{who === 'agent' ? 'New orders faster' : 'Faster ordering, right from your home screen'}</span>
+      </p>
+      <button type="button" className="install-bar-btn" onClick={async () => (await run()) && setHidden(true)}>Install</button>
+      <button type="button" className="install-bar-close" onClick={dismiss} aria-label="Not now"><span aria-hidden="true">✕</span></button>
       {modal}
     </div>
   );
@@ -102,7 +101,7 @@ function InstallSteps({ onClose }) {
 
 // "📤 Share the app" — WhatsApp (or any app on the phone's share sheet).
 export const shareText = (url) =>
-  `Order fresh vegetables, milk, meat, kirana, plumbers, electricians & more in Siddipet — delivered to your door. Install the All Services app: ${url}`;
+  `Order fresh vegetables, milk, meat, kirana, plumbers, electricians & more near you — delivered to your door. Install the All Services app: ${url}`;
 export function ShareApp({ className = 'btn btn-ghost btn-block' }) {
   const url = window.location.origin;
   const share = async () => {

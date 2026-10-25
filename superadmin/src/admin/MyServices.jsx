@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
-import { Modal, Switch, useLoad, useToast } from './ui.jsx';
+import { askConfirm } from '../components/ConfirmDialog.jsx';
+import { Modal, Switch, timeAgo, useLoad, useToast } from './ui.jsx';
 
 // The services (and their products) a franchise offers.
 //   Franchise admin: sees what is on; asks HQ for anything else (they cannot switch things on/off themselves).
-//   Super Admin: <FranchiseServices franchiseId=…> switches services and single products on/off for one franchise.
+//     🚫 They do mark products in / out of stock in their own city (stock.sql) — Products of a service, or the
+//     "Out of stock" panel on top with "All back in stock".
+//   Super Admin: <FranchiseServices franchiseId=…> switches services and single products on/off for one franchise,
+//     and can do the city's stock the same way.
 export default function MyServices() {
   return <FranchiseServices />;
 }
@@ -32,6 +36,8 @@ export function FranchiseServices({ franchiseId }) {
     return out;
   }, [list.data, q, show]);
   const onCount = (list.data || []).filter((s) => s.enabled).length;
+  const base = hq ? `/super/franchises/${franchiseId}` : '/franchise';
+  const out = useLoad(() => api(`${base}/out-of-stock`), [franchiseId]);
 
   const toggle = async (s, on) => {
     try {
@@ -55,6 +61,7 @@ export function FranchiseServices({ franchiseId }) {
         {!hq && <button className="btn btn-primary" onClick={() => setAsking({ kind: 'service' })}>➕ Ask for a new service</button>}
       </div>
       {!hq && <p className="muted small">Services and products are managed by HQ. To offer something new in your city, ask here — HQ reviews and switches it on.</p>}
+      <OutOfStock list={out} base={base} onChange={() => out.reload()} />
       {list.error && <div className="alert">{list.error}</div>}
       {list.loading && !list.data && <div className="center-block"><div className="spinner" /></div>}
       {groups.map((g) => (
@@ -83,17 +90,72 @@ export function FranchiseServices({ franchiseId }) {
         </section>
       ))}
       {list.data && !groups.length && <p className="muted">Nothing here.</p>}
-      {products && <ProductsOf service={products} franchiseId={franchiseId} onClose={() => setProducts(null)} onAsk={() => { setAsking({ kind: 'product', service: products }); setProducts(null); }} />}
+      {products && <ProductsOf service={products} franchiseId={franchiseId} onStock={() => out.reload()} onClose={() => setProducts(null)} onAsk={() => { setAsking({ kind: 'product', service: products }); setProducts(null); }} />}
       {asking && <RequestForm initial={asking} services={(list.data || []).filter((s) => s.is_active)} onClose={() => setAsking(null)} />}
     </div>
   );
 }
 
-// Products of one service in this franchise. HQ can switch single products on/off here.
-function ProductsOf({ service, franchiseId, onClose, onAsk }) {
+// 🚫 What this city has out of stock right now, with "back in stock" for each and for all.
+function OutOfStock({ list, base, onChange }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const items = list.data || [];
+  if (!items.length) return null;
+  const run = async (fn, msg) => {
+    try {
+      const r = await fn();
+      toast(typeof msg === 'function' ? msg(r) : msg);
+      onChange();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  const back = (p) => run(() => api(`${base}/products/${p.id}/stock`, { method: 'PATCH', body: { in_stock: true } }), `${p.name} is back in stock`);
+  const all = async () => (await askConfirm(`Put all ${items.length} items back in stock?`, { okText: 'Yes, all back in stock', cancelText: 'Cancel' }))
+    && run(() => api(`${base}/restock`, { method: 'POST' }), (r) => `${r.restocked} items back in stock`);
+  return (
+    <section className="panel stock-panel">
+      <div className="panel-head">
+        <h3>🚫 Out of stock in your city · {items.length}</h3>
+        <div className="toolbar">
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
+          <button className="btn btn-primary btn-sm" onClick={all}>✅ All back in stock</button>
+        </div>
+      </div>
+      {open ? (
+        <div className="stock-list">
+          {items.map((p) => (
+            <div key={p.id} className="stock-item">
+              <Thumb p={p} />
+              <div><b>{p.brand ? `${p.brand} ` : ''}{p.name}</b><div className="muted small">{p.service_name} · {p.unit}{p.since ? ` · since ${timeAgo(p.since)}` : ''}</div></div>
+              <button className="btn btn-ghost btn-sm" onClick={() => back(p)}>Back in stock</button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted small" style={{ margin: 0 }}>Customers see these greyed out and can't order them: {items.slice(0, 4).map((p) => p.name).join(', ')}{items.length > 4 ? '…' : ''}</p>
+      )}
+    </section>
+  );
+}
+
+const Thumb = ({ p }) => (p.image_url ? <img className="stock-thumb" src={p.image_url} alt="" loading="lazy" /> : <span className="stock-thumb">{p.icon || '📦'}</span>);
+
+// Products of one service in this franchise: the city's stock (franchise admin & HQ) and, for HQ, shown here or not.
+function ProductsOf({ service, franchiseId, onClose, onAsk, onStock }) {
   const toast = useToast();
   const hq = !!franchiseId;
-  const list = useLoad(() => api(hq ? `/super/franchises/${franchiseId}/services/${service.id}/products` : `/franchise/services/${service.id}/products`), [service.id]);
+  const base = hq ? `/super/franchises/${franchiseId}` : '/franchise';
+  const list = useLoad(() => api(`${base}/services/${service.id}/products`), [service.id]);
+  const [q, setQ] = useState('');
+  const [onlyOut, setOnlyOut] = useState(false);
+  const [busy, setBusy] = useState(null);
+  const all = (list.data || []).filter((p) => p.is_active);
+  const outCount = all.filter((p) => p.enabled && !p.in_stock).length;
+  const rows = all
+    .filter((p) => !onlyOut || (p.enabled && !p.in_stock))
+    .filter((p) => `${p.name} ${p.brand || ''} ${p.section || ''}`.toLowerCase().includes(q.trim().toLowerCase()));
   const toggle = async (p, on) => {
     try {
       await api(`/super/franchises/${franchiseId}/products/${p.id}`, { method: 'PATCH', body: { enabled: on } });
@@ -102,23 +164,70 @@ function ProductsOf({ service, franchiseId, onClose, onAsk }) {
       toast(e.message, 'error');
     }
   };
+  const stock = async (p, inStock) => {
+    setBusy(p.id);
+    try {
+      await api(`${base}/products/${p.id}/stock`, { method: 'PATCH', body: { in_stock: inStock } });
+      toast(inStock ? `${p.name}: back in stock` : `${p.name}: out of stock — customers can't order it`);
+      list.reload();
+      onStock?.();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const restock = async () => {
+    if (!(await askConfirm(`Put all ${outCount} out-of-stock items of ${service.name} back in stock?`, { okText: 'Yes, all back in stock', cancelText: 'Cancel' }))) return;
+    try {
+      const r = await api(`${base}/restock?service=${service.id}`, { method: 'POST' });
+      toast(`${r.restocked} items back in stock`);
+      setOnlyOut(false);
+      list.reload();
+      onStock?.();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   return (
     <Modal title={`${service.name} — products`} onClose={onClose} wide
       footer={!hq && <button className="btn btn-primary" onClick={onAsk}>➕ Ask for a product here</button>}>
-      <div className="table-scroll preview-scroll">
-        <table className="table">
-          <thead><tr><th>Product</th><th>Pack</th><th>{hq ? 'Shown here' : 'Status'}</th></tr></thead>
-          <tbody>
-            {(list.data || []).filter((p) => p.is_active).map((p) => (
-              <tr key={p.id} className={p.enabled ? '' : 'row-muted'}>
-                <td>{p.icon} <b>{p.name}</b>{p.brand && <span className="muted small"> · {p.brand}</span>}{p.only_assigned && <span className="tag-pill">only some cities</span>}</td>
-                <td className="small">{p.unit}</td>
-                <td>{hq ? <Switch checked={p.enabled} onChange={(on) => toggle(p, on)} label="" /> : p.enabled ? '✓' : <span className="muted">—</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {list.loading && !list.data && <div className="center-block"><div className="spinner" /></div>}
+      <div className="stack">
+        <div className="toolbar">
+          <input className="toolbar-search" type="search" placeholder={`Search ${all.length} products…`} value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="tabs">
+            <button className={onlyOut ? '' : 'active'} onClick={() => setOnlyOut(false)}>All</button>
+            <button className={onlyOut ? 'active' : ''} onClick={() => setOnlyOut(true)}>Out of stock{outCount ? <span className="count">{outCount}</span> : ''}</button>
+          </div>
+          {outCount > 0 && <button className="btn btn-ghost btn-sm" onClick={restock}>✅ All back in stock</button>}
+        </div>
+        <p className="muted small" style={{ margin: 0 }}>Not available today? Switch it to <b>Out of stock</b> — only in your city. Customers see it greyed out and can't order it until you switch it back.</p>
+        <div className="table-scroll preview-scroll">
+          <table className="table stock-table">
+            <thead><tr><th>Product</th><th>Pack</th>{hq && <th>Shown here</th>}<th>Stock in this city</th></tr></thead>
+            <tbody>
+              {rows.map((p) => (
+                <tr key={p.id} className={!p.enabled ? 'row-muted' : p.in_stock && p.in_stock_all ? '' : 'row-out'}>
+                  <td><div className="stock-name"><Thumb p={p} /><span><b>{p.name}</b>{p.brand && <span className="muted small"> · {p.brand}</span>}{p.only_assigned && <span className="tag-pill">only some cities</span>}<span className="stock-unit muted small">{p.unit}</span></span></div></td>
+                  <td className="small">{p.unit}</td>
+                  {hq && <td><Switch checked={p.enabled} onChange={(on) => toggle(p, on)} label="" /></td>}
+                  <td>
+                    {!p.enabled ? <span className="muted small">Not offered here</span>
+                      : !p.in_stock_all ? <span className="muted small">Out everywhere (HQ)</span>
+                        : (
+                          <button type="button" className={`stock-toggle ${p.in_stock ? 'in' : 'out'}`} disabled={busy === p.id}
+                            onClick={() => stock(p, !p.in_stock)} aria-pressed={!p.in_stock} title={p.in_stock ? 'Mark out of stock' : 'Mark back in stock'}>
+                            <span className="dot" />{p.in_stock ? 'In stock' : 'Out of stock'}
+                          </button>
+                        )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!rows.length && list.data && <p className="muted">{onlyOut ? 'Nothing is out of stock. 👍' : 'No products match.'}</p>}
+          {list.loading && !list.data && <div className="center-block"><div className="spinner" /></div>}
+        </div>
       </div>
     </Modal>
   );

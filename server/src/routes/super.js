@@ -182,6 +182,21 @@ router.patch('/franchises/:id/products/:pid', h(async (req, res) => {
   res.status(204).end();
 }));
 
+// 🚫 a city's stock from the franchise page (stock.sql) — the same as the franchise admin's switch
+router.get('/franchises/:id/out-of-stock', h(async (req, res) => {
+  const { rows } = await query('SELECT fn_city_out_of_stock($1) AS list', [id(req.params.id)]);
+  res.json(rows[0].list);
+}));
+router.patch('/franchises/:id/products/:pid/stock', h(async (req, res) => {
+  if (typeof req.body?.in_stock !== 'boolean') return res.status(400).json({ error: 'Choose in stock or out of stock' });
+  const { rows } = await query('SELECT fn_set_city_stock($1, $2, $3, $4) AS p', [id(req.params.id), id(req.params.pid), req.body.in_stock, req.user.id]);
+  res.json(rows[0].p);
+}));
+router.post('/franchises/:id/restock', h(async (req, res) => {
+  const { rows } = await query('SELECT fn_city_restock($1, $2, $3) AS n', [id(req.params.id), id(req.query.service), req.user.id]);
+  res.json({ restocked: rows[0].n });
+}));
+
 // A master service for every franchise at once.
 router.post('/services/:sid/assign-all', h(async (req, res) => {
   const { rows } = await asActor(req.user.id, (db) => db.query('SELECT fn_assign_service_to_all($1) AS n', [id(req.params.sid)]));
@@ -399,6 +414,39 @@ router.get('/reports', h(async (req, res) => {
     [from, to, fid]
   );
   res.json({ totals: totals[0].s, franchises: per.map((r) => ({ ...r, ...r.s, s: undefined })), report: detail[0].r, services });
+}));
+
+
+// 📍 Where people want us: "Notify me" requests from places we don't deliver to yet (db/waitlist.sql).
+// ?status=waiting (default) | contacted | started | closed | all
+// 💰 Food & cook prices per city (homefood.sql): every active city × Veg / Chicken / Mutton / Fish plate, cook hour,
+// extra half hour — the price, the default and whether the city has its own. HQ sets them; franchises ask HQ.
+router.get('/home-food-prices', h(async (req, res) => {
+  const { rows } = await query('SELECT fn_home_food_prices() AS p');
+  res.json(rows[0].p);
+}));
+// body: { item, price } — price null / '' = back to the default
+router.put('/home-food-prices/:franchise', h(async (req, res) => {
+  const b = req.body || {};
+  const price = b.price === null || b.price === '' || b.price === undefined ? null : Number(b.price);
+  if (price !== null && !Number.isFinite(price)) return res.status(400).json({ error: 'Enter a valid price' });
+  await asActor(req.user.id, (db) => db.query('CALL sp_set_home_food_price($1, $2, $3, $4)', [id(req.params.franchise), String(b.item || ''), price, req.user.id]));
+  const { rows } = await query('SELECT fn_home_food_prices() AS p');
+  res.json(rows[0].p.find((f) => f.franchise_id === id(req.params.franchise)) || null);
+}));
+
+router.get('/waitlist', h(async (req, res) => {
+  const st = ['waiting', 'contacted', 'started', 'closed', 'all'].includes(req.query.status) ? req.query.status : 'waiting';
+  const { rows } = await query('SELECT fn_waitlist_report($1) AS r', [st]);
+  res.json(rows[0].r);
+}));
+// HQ marks a request: contacted (called them) · started (we opened there) · closed (not interested) · waiting again
+router.patch('/waitlist/:id', h(async (req, res) => {
+  const st = req.body?.status;
+  if (!['waiting', 'contacted', 'started', 'closed'].includes(st)) return res.status(400).json({ error: 'Unknown status' });
+  const { rowCount } = await query('UPDATE area_waitlist SET status = $2, updated_at = now() WHERE id = $1', [id(req.params.id), st]);
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  res.status(204).end();
 }));
 
 export default router;

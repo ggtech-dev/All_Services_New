@@ -1,4 +1,4 @@
-import { toPhotoQueries, toProducts } from './kirana.js';
+import { toProducts } from './kirana.js';
 
 // Pooja Store: everyday pooja needs. No prices — the agent buys them and the customer pays as per the shop bill.
 // Customers can also write their own list or send a photo of it (like Kirana). Goes to regular agents.
@@ -39,5 +39,7 @@ export const poojaSections = {
   ],
 };
 
-export const poojaProducts = toProducts(poojaSections, 'pj');
-export const poojaPhotoQueries = toPhotoQueries(poojaSections, 'pj');
+// 🪔 2026-10-26: the Pooja Store uses only our own AI photos (pooja-photos.js) — no Wikimedia photo searches any more,
+// so db:setup never fills an empty Pooja photo with a licensed one again.
+export const poojaProducts = toProducts(poojaSections, 'pj').map((p) => Object.assign(p, { 7: null }));
+export const poojaPhotoQueries = {};

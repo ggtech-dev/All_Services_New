@@ -159,5 +159,7 @@ export const toPhotoQueries = (sections, prefix) => Object.fromEntries(
   Object.values(sections).flat().filter((i) => i[4]).map(([name, , , , query, match]) => [`${prefix}:${slug(name)}`, [query, new RegExp(match, 'i')]])
 );
 
-export const kiranaProducts = toProducts(kiranaSections, 'kir');
-export const kiranaPhotoQueries = toPhotoQueries(kiranaSections, 'kir');
+// 🛒 2026-10-25: Kirana uses only our own AI photos (kirana-photos.js) — no Wikimedia photo searches any more, so
+// db:setup never fills an empty Kirana photo with a licensed one again.
+export const kiranaProducts = toProducts(kiranaSections, 'kir').map((p) => Object.assign(p, { 7: null }));
+export const kiranaPhotoQueries = {};

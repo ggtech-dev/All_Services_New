@@ -1,6 +1,6 @@
 import {
-  Bike, CarFront, CarTaxiFront, HardHat, HeartPulse, LayoutGrid, MonitorSmartphone, PartyPopper, ShoppingBasket, Sparkles, Store,
-  Tractor, Wrench,
+  BadgePercent, Bike, CarFront, Truck, CarTaxiFront, ChefHat, HardHat, HeartPulse, LayoutGrid, MonitorSmartphone, PartyPopper, ShoppingBasket, Sparkles, Store,
+  Soup, Tractor, Wrench,
 } from 'lucide-react';
 
 // One icon style for the whole customer app (Lucide line icons, free for business use): the same look on every phone,
@@ -19,6 +19,10 @@ export const CATEGORY_ICONS = {
   'share-ride': [CarTaxiFront, '#a78bfa', '#6d28d9'],
   'digital-services': [MonitorSmartphone, '#818cf8', '#4338ca'],
   health: [HeartPulse, '#f87171', '#b91c1c'],
+  'book-your-cook': [ChefHat, '#fb923c', '#c2410c'],
+  'tomorrow-food': [Soup, '#fb7185', '#be123c'],
+  offers: [BadgePercent, '#fb923c', '#ea580c'],
+  'goods-transport': [Truck, '#38bdf8', '#0369a1'],
 };
 const glow = (hex) => `0 8px 18px -8px ${hex}cc`; // soft shadow in the category's own colour
 

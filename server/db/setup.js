@@ -9,6 +9,12 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { pool, SCHEMA } from '../src/db.js';
 import { categories, homeVisitTypes, localities, products, serviceOptions, serviceSkills, serviceTypes } from './catalog.js';
+import { VEGETABLES, VEG_PACK_PHOTOS } from './vegetables.js';
+import { KIRANA_PHOTOS, KIRANA_PHOTOS_2, KIRANA_SECTIONS, MILK_PHOTOS } from './kirana-photos.js';
+import { FRUITS } from './fruits.js';
+import { POOJA_PHOTOS, POOJA_SECTIONS } from './pooja-photos.js';
+import { BAKERY_PHOTOS, BAKERY_SECTIONS } from './bakery-photos.js';
+import { PET_PHOTOS, PET_SECTIONS } from './pet-photos.js';
 
 const refreshImages = process.argv.includes('--refresh-images');
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -20,7 +26,7 @@ const image = (keywords) => images[keywords] || {};
 const defaultSettings = {
   banner_title: 'What do you need today?',
   banner_subtitle: 'Water cans, plumbers, kirana, medicines, bike repair and more — from trusted local partners near you.',
-  announcement: '🎉 Free delivery on your first order in Siddipet!',
+  announcement: '🎉 Free delivery on your first order!',
   support_phone: '+91 86886 87412', // help links on the login page and home (call)
   support_whatsapp: '+91 86886 87412',
   support_email: 'gouravmacha@gmail.com',
@@ -53,6 +59,7 @@ try {
   await client.query(await sql('./delivery.sql'));
   await client.query(await sql('./instant.sql')); // ⚡ Instant Delivery: other shops' products, instant agents only
   await client.query(await sql('./franchise.sql')); // franchises (dealers) under the Super Admin — last: uses everything above
+  await client.query(await sql('./stock.sql')); // 🚫 out of stock per city (the franchise admin's switch) — after franchise.sql
   await client.query(await sql('./events.sql')); // 🎉 Events bookings (date, time, venue) for event partners
   await client.query(await sql('./vehicle.sql')); // 🚗 Vehicle Rental: car bookings (pickup, drop, date, time) for car partners
   await client.query(await sql('./health.sql')); // 💊 Home Doctor Visit types (parent services), visit time: now or a date
@@ -63,6 +70,10 @@ try {
   await client.query(await sql('./overdue.sql')); // ⏰ overdue open orders (red badge for the admin) — last: reads every slot kind
   await client.query(await sql('./geo.sql')); // 📍 franchise centre + range: where orders go, agents' zone, area requests
   await client.query(await sql('./popular.sql')); // ⭐ "Our most popular services" on the home page (HQ list, city lists)
+  await client.query(await sql('./waitlist.sql')); // 📍 "Notify me" from places we don't deliver to yet — HQ sees where people want us
+  await client.query(await sql('./homefood.sql')); // 🍱 Home Food & Cooks: Book a Cook by the hour, Tomorrow's Meal pre-orders
+  await client.query(await sql('./offers.sql')); // 📢 Offers near you: local shops' offers — shop asks, franchise checks, HQ approves
+  await client.query(await sql('./transport.sql')); // 🚚 Goods Transportation: goods vehicles of the city, customers call the owner
 
   await client.query('BEGIN');
 
@@ -428,9 +439,17 @@ try {
   const offerDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'offer_first_order_v1'");
   if (!offerDone.rowCount) {
     await client.query("UPDATE site_settings SET value = '1' WHERE key = 'free_delivery_orders'");
-    await client.query("UPDATE site_settings SET value = '🎉 Free delivery on your first order in Siddipet!' WHERE key = 'announcement'");
+    await client.query("UPDATE site_settings SET value = '🎉 Free delivery on your first order!' WHERE key = 'announcement'");
     await client.query("INSERT INTO site_settings (key, value) VALUES ('offer_first_order_v1', current_date::text)");
     console.log('🎉 Offer: free delivery on the first order (once per mobile number).');
+  }
+
+  // One time (2026-10-25): the announcement is shown in every city, so it no longer names Siddipet (an Armoor customer
+  // saw "...in Siddipet!"). Only the old default text is changed; a text HQ wrote in Settings is kept.
+  const annCityDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'announcement_no_city_v1'");
+  if (!annCityDone.rowCount) {
+    await client.query("UPDATE site_settings SET value = '🎉 Free delivery on your first order!' WHERE key = 'announcement' AND value = '🎉 Free delivery on your first order in Siddipet!'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('announcement_no_city_v1', current_date::text)");
   }
 
   // One time (2026-10-21): orders placed before orders.free_delivery existed — mark the ones whose delivery charge
@@ -550,7 +569,7 @@ try {
       ],
       [
         "Shop For Me",
-        "/popular/shop-for-me.jpg",
+        "/popular/shop-for-me-2.jpg",
         null
       ],
       [
@@ -568,6 +587,14 @@ try {
     }
     await client.query("INSERT INTO site_settings (key, value) VALUES ('home_popular_photos_v2', current_date::text)");
     console.log('⭐ Popular on home: 6 cards with real photos.');
+  }
+  // One time (2026-10-24): 🛠️ Shop For Me card — the new photo (shopkeeper hands our partner the bag). A new file name, so
+  // phones that cached the old photo get the new one. A photo HQ chose itself is kept.
+  const sfm2Done = await client.query("SELECT 1 FROM site_settings WHERE key = 'popular_sfm_photo_v3'");
+  if (!sfm2Done.rowCount) {
+    await client.query(`UPDATE home_popular SET image_url = '/popular/shop-for-me-2.jpg', image_credit = NULL
+                         WHERE title = 'Shop For Me' AND (image_url IS NULL OR image_url = '/popular/shop-for-me.jpg')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('popular_sfm_photo_v3', current_date::text)");
   }
   // One time (2026-10-22): the sliding banner shows what customers see nowhere else on the home page — our newer
   // services — instead of repeats (free delivery = the banner on top; vegetables & meat = popular cards; 2 milk slides).
@@ -598,6 +625,500 @@ try {
   if (!washDone.rowCount) {
     await client.query("UPDATE promotions SET is_active = false WHERE name = 'Car wash tile'");
     await client.query("INSERT INTO site_settings (key, value) VALUES ('home_wash_tile_off_v1', current_date::text)");
+  }
+
+  // One time per list version (2026-10-24): 🥬 Fresh Vegetables = our own catalog with our own photos (db/vegetables.js).
+  // The vegetables we had keep their product (old orders point at them) and get the new name / photo / unit; the rest
+  // are added, or updated if an earlier version added them. Every vegetable gets its place in the order; the older
+  // "Vegetable Delivery" packs get the same photos. A new list version = a new key below (v3: + 9 varieties).
+  const vegDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'vegetables_v3'");
+  if (!vegDone.rowCount) {
+    const svc = await client.query("SELECT id FROM services WHERE slug = 'food-daily-fresh-vegetables'");
+    if (svc.rowCount) {
+      const sid = svc.rows[0].id;
+      let added = 0;
+      for (const [i, [file, name, sellBy, unit, oldSlug]] of VEGETABLES.entries()) {
+        const img = `/products/vegetables/${file}.jpg`;
+        const upd = oldSlug ? await client.query(
+          `UPDATE products SET name = $2, sell_by = $3, unit = $4, image_url = $5, image_credit = NULL, sort_order = $6, is_active = true
+            WHERE slug = $1 AND service_id = $7`, [oldSlug, name, sellBy, unit, img, i + 1, sid]) : { rowCount: 0 };
+        if (!upd.rowCount) {
+          const r = await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, image_url, sort_order)
+             VALUES ($1, $2, $3, $4, 0, $5, $6, $7)
+             ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit, sell_by = EXCLUDED.sell_by,
+                    image_url = EXCLUDED.image_url, image_credit = NULL, sort_order = EXCLUDED.sort_order
+             RETURNING (xmax = 0) AS inserted`,
+            [sid, `food-daily-fresh-vegetables-${file}`, name, unit, sellBy, img, i + 1]);
+          added += r.rows[0]?.inserted ? 1 : 0;
+        }
+      }
+      for (const [name, file] of Object.entries(VEG_PACK_PHOTOS)) {
+        await client.query(
+          `UPDATE products p SET image_url = $2, image_credit = NULL FROM services s
+            WHERE s.id = p.service_id AND s.slug = 'food-daily-vegetable-delivery' AND p.name = $1`, [name, `/products/vegetables/${file}.jpg`]);
+      }
+      console.log(`🥬 Fresh Vegetables: ${VEGETABLES.length} with our photos (${added} new).`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('vegetables_v3', current_date::text)");
+  }
+  // …and the two vegetable services' own photo (shop header, cards) = our basket photo instead of the licensed one.
+  const vegPhotoDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'veg_service_photo_v1'");
+  if (!vegPhotoDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/popular/vegetables.jpg', image_credit = NULL
+                         WHERE slug IN ('food-daily-fresh-vegetables', 'food-daily-vegetable-delivery')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('veg_service_photo_v1', current_date::text)");
+  }
+
+  // One time (2026-10-24): the Water Tanker photo showed another business's phone numbers on the tank (and its licence
+  // was NonCommercial) → off; the card shows its icon until our own photo is uploaded.
+  const tankerDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'tanker_photo_off_v1'");
+  if (!tankerDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = NULL, image_credit = NULL
+                         WHERE slug = 'home-services-water-tank-cleaning' AND image_url LIKE '%44047687875%'`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('tanker_photo_off_v1', current_date::text)");
+  }
+
+  // One time (2026-10-25): two new categories right after Food & Daily (db/homefood.sql) —
+  //   👩‍🍳 Book Your Cook: a cook at home by the hour (₹79 an hour, ₹40 an extra half hour), book_cook partners;
+  //   🍱 Order Your Food for Tomorrow: 8 plates (Veg / Chicken / Mutton / Fish × lunch / dinner), tomorrow_meals
+  //      partners, cash on delivery.
+  // In every city, with a home slide each. Prices, rates and the 9 PM cut-off are settings / products the admin can change.
+  const homeFood = [
+    ['book-your-cook', 'Book Your Cook', '👩‍🍳', 'A cook comes to your home and cooks with your groceries — book by the hour, today or tomorrow.', '#ea580c',
+      'home-food-book-a-cook', 'Book Your Cook', 'A cook comes to your home and cooks with your groceries — book by the hour, today or tomorrow. Pay the cook in cash after the work.',
+      'book_cook', 79, 'per hour'],
+    ['tomorrow-food', 'Order Your Food for Tomorrow', '🍱', "Home-style lunch or dinner for tomorrow — Veg, Chicken, Mutton or Fish. Order by 9 PM.", '#e11d48',
+      'home-food-tomorrows-meal', 'Order Your Food for Tomorrow', "Home-style lunch or dinner for tomorrow — pick from tomorrow's menu. Order by 9 PM, pay cash on delivery.",
+      'tomorrow_meals', 0, 'per plate'],
+  ];
+  const putHomeFood = async () => {
+    // Food & Daily stays first; the two new ones follow it (same order number, then by name)
+    await client.query("UPDATE categories SET sort_order = -2 WHERE slug = 'food-daily' AND sort_order > -2");
+    const ids = [];
+    for (const [cslug, cname, icon, cdesc, color, sslug, sname, sdesc, skill, base, unit] of homeFood) {
+      const cat = (await client.query(
+        `INSERT INTO categories (slug, name, icon, description, color, sort_order, is_active) VALUES ($1, $2, $3, $4, $5, -1, true)
+         ON CONFLICT (slug) DO UPDATE SET is_active = true RETURNING id`, [cslug, cname, icon, cdesc, color])).rows[0].id;
+      ids.push((await client.query(
+        `INSERT INTO services (category_id, slug, name, description, icon, skill_code, base_price, price_unit, delivery_fee, sort_order, is_active, is_featured)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 1, true, true)
+         ON CONFLICT (slug) DO UPDATE SET category_id = EXCLUDED.category_id, name = EXCLUDED.name, description = EXCLUDED.description, is_active = true
+         RETURNING id`, [cat, sslug, sname, sdesc, icon, skill, base, unit])).rows[0].id);
+    }
+    return ids;
+  };
+  const foodDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_food_v1'");
+  if (!foodDone.rowCount) {
+    for (const [k, v] of [['cook_rate_hour', '79'], ['cook_rate_half_hour', '40'], ['meal_cutoff_hour', '21']]) {
+      await client.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [k, v]);
+    }
+    const [cook, meal] = await putHomeFood();
+    const plates = [
+      ['veg', 'Veg Meal', 120, '🥗', "2 curries + 1 charu + rice + curd — from the day's menu"],
+      ['chicken', 'Chicken Meal', 170, '🍗', 'Chicken curry + rice + charu + curd'],
+      ['mutton', 'Mutton Meal', 230, '🍖', 'Mutton curry + rice + charu + curd'],
+      ['fish', 'Fish Meal', 190, '🐟', 'Fish curry + rice + charu + curd'],
+    ];
+    let sort = 0;
+    for (const meal_ of ['lunch', 'dinner']) {
+      for (const [key, name, price, icon, desc] of plates) {
+        await client.query(
+          `INSERT INTO products (service_id, slug, name, description, icon, unit, price, sell_by, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pack', $8) ON CONFLICT (slug) DO NOTHING`,
+          [meal, `home-food-meal-${key}-${meal_}`, `${name} — ${meal_ === 'lunch' ? 'Lunch' : 'Dinner'}`, desc, icon, '1 plate', price, ++sort]);
+      }
+    }
+    // offered in every city (HQ / the franchise admin can switch them off per city)
+    await client.query(
+      `INSERT INTO franchise_services (franchise_id, service_id) SELECT f.id, s.id FROM franchises f CROSS JOIN unnest($1::int[]) AS s(id)
+       ON CONFLICT DO NOTHING`, [[cook, meal]]);
+    for (const [i, [name, title, sub, cta, link]] of [
+      ["Food for Tomorrow slide", "🍱 Order your food for tomorrow", 'Home-style lunch & dinner — Veg, Chicken, Mutton or Fish meals. Order by 9 PM, pay cash on delivery', "See tomorrow's menu", 'tomorrow-food'],
+      ['Book Your Cook slide', '👩‍🍳 Book your cook — ₹79 an hour', 'A cook comes home and cooks with your groceries — today or tomorrow, by the hour', 'Book a cook', 'book-your-cook'],
+    ].entries()) {
+      await client.query(
+        `INSERT INTO promotions (name, title, subtitle, cta_text, link_type, link_value, placement, bg_color, text_color, sort_order, is_active)
+         SELECT $1::text, $2::text, $3::text, $4::text, 'category', $6::text, 'carousel', '#c2410c', '#ffffff', $5::int, true
+          WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE name = $1::text)`, [name, title, sub, cta, i, link]);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_food_v1', current_date::text)");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_food_split_v1', current_date::text) ON CONFLICT DO NOTHING");
+    console.log('👩‍🍳 Book Your Cook + 🍱 Order Your Food for Tomorrow added.');
+  }
+  // One time: a database that got the first version (one "Home Food & Cooks" category) → the two categories.
+  const splitDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_food_split_v1'");
+  if (!splitDone.rowCount) {
+    await putHomeFood();
+    await client.query("UPDATE categories SET is_active = false WHERE slug = 'home-food'");
+    await client.query(`UPDATE promotions SET name = 'Food for Tomorrow slide', title = '🍱 Order your food for tomorrow', link_value = 'tomorrow-food',
+                         subtitle = 'Home-style lunch & dinner — Veg, Chicken, Mutton or Fish meals. Order by 9 PM, pay cash on delivery'
+                         WHERE name = 'Tomorrow''s Meal slide'`);
+    await client.query(`UPDATE promotions SET name = 'Book Your Cook slide', title = '👩‍🍳 Book your cook — ₹79 an hour', link_value = 'book-your-cook'
+                         WHERE name = 'Book a Cook slide'`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_food_split_v1', current_date::text)");
+    console.log('🍱 Home food: split into Book Your Cook + Order Your Food for Tomorrow.');
+  }
+
+  // One time (2026-10-25): 🥨 Snacks for tomorrow — a third tab next to Lunch / Dinner on the meal page. Traditional
+  // snacks by the pack (products home-food-snack-*); HQ changes prices and adds photos in Master products.
+  const snacksDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_food_snacks_v1'");
+  if (!snacksDone.rowCount) {
+    const snacks = [
+      ['sakinalu', 'Sakinalu', '🥨', 100, 'Crispy rice-flour rings with sesame — Telangana special'],
+      ['chegodilu', 'Chegodilu', '🥨', 90, 'Crunchy rice-flour rings'],
+      ['murukulu', 'Murukulu', '🥨', 90, 'Crispy spirals of rice and gram flour'],
+      ['pappu-chekkalu', 'Pappu Chekkalu', '🍘', 90, 'Thin rice crackers with chana dal'],
+      ['karapusa', 'Karapusa', '🥨', 80, 'Spicy gram-flour sticks'],
+      ['kara-boondi', 'Kara Boondi', '🥜', 80, 'Spicy boondi with peanuts and curry leaves'],
+      ['mixture', 'Mixture', '🥜', 90, 'Spicy mixture with peanuts'],
+      ['appalu', 'Appalu', '🍪', 110, 'Sweet rice-flour and jaggery appalu'],
+      ['ariselu', 'Ariselu', '🍪', 130, 'Rice-flour and jaggery sweet with sesame'],
+      ['sunnundalu', 'Sunnundalu', '🍬', 140, 'Urad dal and jaggery laddus with ghee'],
+      ['kajjikayalu', 'Kajjikayalu', '🥟', 120, 'Crisp sweet pockets with coconut and jaggery'],
+      ['bellam-gavvalu', 'Bellam Gavvalu', '🍬', 100, 'Jaggery-coated shells'],
+    ];
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'home-food-tomorrows-meal'")).rows[0]?.id;
+    if (svc) {
+      let sort = 100;
+      for (const [slug, name, icon, price, desc] of snacks) {
+        await client.query(
+          `INSERT INTO products (service_id, slug, name, description, icon, unit, price, sell_by, sort_order)
+           VALUES ($1, $2, $3, $4, $5, '250 g', $6, 'pack', $7) ON CONFLICT (slug) DO NOTHING`,
+          [svc, `home-food-snack-${slug}`, name, desc, icon, price, ++sort]);
+      }
+      await client.query(`UPDATE promotions SET subtitle = 'Home-style lunch, dinner & snacks — Veg, Chicken, Mutton, Fish meals and sakinalu, murukulu, appalu… Order by 9 PM, cash on delivery'
+                           WHERE name = 'Food for Tomorrow slide'`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_food_snacks_v1', current_date::text)");
+    console.log(`🥨 Snacks for tomorrow: ${snacks.length} snacks added.`);
+  }
+
+  // One time (2026-10-25): 🥬 Vegetable Delivery = Fresh Vegetables (user's choice: both cards show the same items).
+  // Its card counts and opens Fresh Vegetables (instant.sql fn_service_items / fn_service_page_slug); its old packs are
+  // switched off so search doesn't offer them. Undo: set same_as_service_id back to NULL and switch the packs on.
+  const vegSameDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'veg_same_as_fresh_v1'");
+  if (!vegSameDone.rowCount) {
+    const r = await client.query(`UPDATE services SET same_as_service_id = (SELECT id FROM services WHERE slug = 'food-daily-fresh-vegetables')
+                                   WHERE slug = 'food-daily-vegetable-delivery' AND EXISTS (SELECT 1 FROM services WHERE slug = 'food-daily-fresh-vegetables')`);
+    if (r.rowCount) {
+      await client.query(`UPDATE products SET is_active = false
+                           WHERE service_id = (SELECT id FROM services WHERE slug = 'food-daily-vegetable-delivery')`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('veg_same_as_fresh_v1', current_date::text)");
+    console.log('🥬 Vegetable Delivery now shows the Fresh Vegetables items.');
+  }
+
+  // One time (2026-10-25): 🧹 Food & Daily without double cards (user's choice):
+  //  · Fresh Vegetables any time (no 6–10 AM window), arrives in ~30 min
+  //  · Vegetable Delivery, Meat / Chicken Delivery, Fish Delivery and Milk Delivery switched off — their extra items move
+  //    to Daily Fresh Meat & Fish / Fresh Milk ("Fresh Milk & Dairy")
+  //  · Instant Delivery off the category list (its own big card on Home stays; search still finds it)
+  // Switched off, not deleted — HQ can switch them on again in Master services.
+  const foodTidyDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'food_daily_tidy_v1'");
+  if (!foodTidyDone.rowCount) {
+    await client.query(`UPDATE services SET window_from = NULL, window_to = NULL, eta_minutes = 30,
+                               description = 'Farm-fresh vegetables delivered to your door. Choose how much you need — your delivery partner buys them fresh at the market and you pay as per the shop bill.'
+                         WHERE slug = 'food-daily-fresh-vegetables'`);
+    await client.query(`UPDATE promotions SET name = 'Fresh vegetables', subtitle = 'Choose in kg · pay as per market price' WHERE subtitle = 'Delivered 6–10 AM · choose in kg · pay as per market price'`);
+    await client.query("UPDATE promotions SET subtitle = 'Market price' WHERE subtitle = '6–10 AM · market price'");
+    // the extra items, at the end of their new list
+    const move = async (to, from, names) => {
+      await client.query(
+        `UPDATE products p SET service_id = t.id, sort_order = 1000 + p.sort_order
+           FROM services t, services f
+          WHERE t.slug = $1 AND f.slug = $2 AND p.service_id = f.id AND p.name = ANY ($3::text[])`, [to, from, names]);
+    };
+    await move('food-daily-daily-fresh-meat-fish', 'food-daily-meat-chicken-delivery', ['Chicken Liver']);
+    await move('food-daily-daily-fresh-meat-fish', 'food-daily-fish-delivery', ['Seer Fish (Vanjaram)']);
+    await move('food-daily-fresh-milk', 'food-daily-milk-delivery', ['Heritage Full Cream Milk', 'Jersey Curd', 'Vijaya Ghee', 'Fresh Paneer', 'Buttermilk (Majjiga)']);
+    await client.query(`UPDATE services SET name = 'Fresh Milk & Dairy',
+                               description = 'Fresh organic milk, packet milk, curd, ghee, paneer and buttermilk at your door every morning, 6–9 AM.'
+                         WHERE slug = 'food-daily-fresh-milk' AND name = 'Fresh Milk'`);
+    await client.query("UPDATE promotions SET link_value = 'food-daily-fresh-milk' WHERE link_value = 'food-daily-milk-delivery'");
+    await client.query(`UPDATE services SET is_active = false
+                         WHERE slug IN ('food-daily-vegetable-delivery', 'food-daily-meat-chicken-delivery', 'food-daily-fish-delivery', 'food-daily-milk-delivery')`);
+    await client.query("UPDATE services SET in_category_list = false WHERE slug = 'food-daily-instant-delivery'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('food_daily_tidy_v1', current_date::text)");
+    console.log('🧹 Food & Daily: vegetables any time; double cards switched off (items moved); Instant only on Home.');
+  }
+
+  // One time (2026-10-25): 🛒 Kirana with our own AI photos (db/kirana-photos.js, files in public/products/kirana/).
+  //  · every licensed photo (Wikimedia & other web photos) on Kirana products is removed; admin-uploaded ones stay
+  //  · a photo of a product we have → that product gets it (and the brand on the pack); the rest → new products
+  //  · the milk-packet photos → Fresh Milk & Dairy; then Kirana is ordered by section (KIRANA_SECTIONS)
+  const kiranaPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_ai_photos_v1'");
+  if (!kiranaPhotosDone.rowCount) {
+    const ICON = { 'Rice & Grains': '🍚', 'Atta, Rava & Flours': '🌾', 'Dals & Pulses': '🫘', 'Oils & Ghee': '🛢️', 'Spices & Masalas': '🌶️',
+      'Salt, Sugar & Jaggery': '🧂', 'Tea, Coffee & Health Drinks': '☕', 'Breakfast & Instant Food': '🥣', 'Biscuits & Snacks': '🍪',
+      'Chocolates & Sweets': '🍫', 'Pickles, Sauces & Spreads': '🫙', 'Dry Fruits & Nuts': '🥜', 'Water & Drinks': '💧',
+      'Cleaning & Laundry': '🧼', 'Personal Care': '🧴' };
+    const put = async (svcSlug, [file, name, brand, section, unit, existing]) => {
+      const svc = (await client.query('SELECT id FROM services WHERE slug = $1', [svcSlug])).rows[0];
+      if (!svc) return 0;
+      const img = `/products/kirana/${file}.jpg`;
+      if (existing) {
+        const r = await client.query(
+          `UPDATE products SET image_url = $3, image_credit = NULL, brand = coalesce($4, brand), section = coalesce(section, $5)
+            WHERE service_id = $1 AND name = $2`, [svc.id, existing, img, brand, section]);
+        return r.rowCount;
+      }
+      const r = await client.query(
+        `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order)
+         VALUES ($1, $2, $3, $4, $5, 0, 'pack', $6, $7, $8, 9999)
+         ON CONFLICT (slug) DO UPDATE SET image_url = EXCLUDED.image_url, image_credit = NULL`,
+        [svc.id, `${svcSlug}-${slugify(name)}`, name, brand, unit, ICON[section] || '🥛', img, section]);
+      return r.rowCount;
+    };
+    const cleared = await client.query(
+      `UPDATE products p SET image_url = NULL, image_credit = NULL FROM services s
+        WHERE s.id = p.service_id AND s.slug = 'food-daily-kirana-delivery' AND p.image_url ~ '^https?://'`);
+    let done = 0;
+    for (const row of KIRANA_PHOTOS) done += await put('food-daily-kirana-delivery', row);
+    for (const [file, name, brand, unit, existing] of MILK_PHOTOS) done += await put('food-daily-fresh-milk', [file, name, brand, null, unit, existing]);
+    // Kirana in section order; inside a section the products we had first, then the new ones
+    await client.query(
+      `UPDATE products p SET sort_order = x.n FROM (
+         SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($1::text[], p.section::text), 0), p.sort_order, p.id) AS n
+           FROM products p JOIN services s ON s.id = p.service_id WHERE s.slug = 'food-daily-kirana-delivery') x
+        WHERE x.id = p.id`, [KIRANA_SECTIONS]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_ai_photos_v1', current_date::text)");
+    console.log(`🛒 Kirana: ${cleared.rowCount} licensed photos removed, ${done} products with our AI photos.`);
+  }
+
+  // One time (2026-10-25): the Kirana and ⚡ Instant Delivery card photos → our own (licensed web photos before: Kirana
+  // CC BY-SA, Instant CC BY-NC, which a business may not use). Kirana: the user's Telugu kirana-store photo; Instant:
+  // our AI pack photos together (instant.jpg). Only if still a web photo, so an admin's own photo is kept.
+  const kiranaCardDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_card_photos_v1'");
+  if (!kiranaCardDone.rowCount) {
+    for (const [slug, img] of [['food-daily-kirana-delivery', '/popular/kirana.jpg'], ['food-daily-instant-delivery', '/popular/instant.jpg']]) {
+      await client.query(`UPDATE services SET image_url = $2, image_credit = NULL
+                           WHERE slug = $1 AND (image_url IS NULL OR image_url ~ '^https?://')`, [slug, img]);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_card_photos_v1', current_date::text)");
+    console.log('🛒 Kirana + ⚡ Instant card photos: our own.');
+  }
+
+  // One time (2026-10-25): a Kirana product added in Admin without a section (e.g. "Toor Dal") went above all the
+  // sections — dals go into Dals & Pulses, then Kirana is ordered by section again. Nothing else changes.
+  const kiranaLooseDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_loose_section_v1'");
+  if (!kiranaLooseDone.rowCount) {
+    await client.query(
+      `UPDATE products p SET section = 'Dals & Pulses' FROM services s
+        WHERE s.id = p.service_id AND s.slug = 'food-daily-kirana-delivery' AND p.section IS NULL AND p.name ~* '\\m(dal|pappu)\\M'`);
+    await client.query(
+      `UPDATE products p SET sort_order = x.n FROM (
+         SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($1::text[], p.section::text), 0), p.sort_order, p.id) AS n
+           FROM products p JOIN services s ON s.id = p.service_id WHERE s.slug = 'food-daily-kirana-delivery') x
+        WHERE x.id = p.id`, [KIRANA_SECTIONS]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_loose_section_v1', current_date::text)");
+  }
+
+  // One time (2026-10-25): 🍎 Fruit Delivery with our own AI photos (db/fruits.js, files in public/products/fruits/):
+  // a fruit we have gets its photo; the others are added (market price), after the ones we had.
+  const fruitsDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'fruits_ai_photos_v1'");
+  if (!fruitsDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-fruit-delivery'")).rows[0];
+    if (svc) {
+      const last = Number((await client.query('SELECT coalesce(max(sort_order), 0) AS n FROM products WHERE service_id = $1', [svc.id])).rows[0].n);
+      let done = 0;
+      for (const [i, [file, name, unit, existing]] of FRUITS.entries()) {
+        const img = `/products/fruits/${file}.jpg`;
+        const r = existing
+          ? await client.query('UPDATE products SET image_url = $3, image_credit = NULL WHERE service_id = $1 AND name = $2', [svc.id, existing, img])
+          : await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, icon, image_url, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'pack', '🍎', $5, $6)
+             ON CONFLICT (slug) DO UPDATE SET image_url = EXCLUDED.image_url, image_credit = NULL`,
+            [svc.id, `food-daily-fruit-delivery-${slugify(name)}`, name, unit, img, last + 1 + i]);
+        done += r.rowCount;
+      }
+      console.log(`🍎 Fruit Delivery: ${done} fruits with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('fruits_ai_photos_v1', current_date::text)");
+  }
+  // …and its card photo: our AI fruits together (fruits.jpg) instead of the licensed Flickr fruit stall (if still that).
+  const fruitCardDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'fruit_card_photo_v1'");
+  if (!fruitCardDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/popular/fruits.jpg', image_credit = NULL
+                         WHERE slug = 'food-daily-fruit-delivery' AND (image_url IS NULL OR image_url ~ '^https?://')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('fruit_card_photo_v1', current_date::text)");
+  }
+  // 🍗 Daily Fresh Meat & Fish: the same photo as its "Fresh Meat & Fish" home card (user's own) instead of the licensed
+  // web photo of chickens in a cage (if still a web photo).
+  const meatCardDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'meat_card_photo_v1'");
+  if (!meatCardDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/popular/meat-fish.jpg', image_credit = NULL
+                         WHERE slug = 'food-daily-daily-fresh-meat-fish' AND (image_url IS NULL OR image_url ~ '^https?://')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('meat_card_photo_v1', current_date::text)");
+  }
+
+  // One time (2026-10-26): 📢 the "Offers Near You" category (local shops' offers — offers.sql). It has no services:
+  // its tile opens the offers page (/offers), and offers show only there.
+  const offersCatDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'offers_category_v1'");
+  if (!offersCatDone.rowCount) {
+    await client.query(
+      `INSERT INTO categories (slug, name, icon, description, color, sort_order)
+       VALUES ('offers', 'Offers Near You', '📢', 'Deals from shops in your city — mobiles, jewellery, clothing and more', '#ea580c', 0)
+       ON CONFLICT (slug) DO NOTHING`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('offers_category_v1', current_date::text)");
+    console.log('📢 Category "Offers Near You" added.');
+  }
+
+  // One time (2026-10-26): 🚚 the "Goods Transportation" category (transport.sql) — goods vehicles of the city, added by
+  // the franchise admin; customers call / WhatsApp the owner. No services: its tile opens /transport.
+  const transportCatDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'transport_category_v1'");
+  if (!transportCatDone.rowCount) {
+    await client.query(
+      `INSERT INTO categories (slug, name, icon, description, color, sort_order)
+       VALUES ('goods-transport', 'Goods Transportation', '🚚', 'Tata Ace, Bolero pickup, goods auto, DCM, tractor and lorry owners near you — call them directly', '#0369a1', 6)
+       ON CONFLICT (slug) DO NOTHING`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('transport_category_v1', current_date::text)");
+    console.log('🚚 Category "Goods Transportation" added.');
+  }
+
+  // One time (2026-10-26): 🪔 Pooja Store with our own AI photos (db/pooja-photos.js, files in public/products/pooja/):
+  // every licensed web photo on its products is removed (admin uploads stay); a photo of a product we have → that
+  // product; the rest → new products (as per shop bill); then ordered by section; the card photo → pooja.jpg.
+  const poojaPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'pooja_ai_photos_v1'");
+  if (!poojaPhotosDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-pooja-store'")).rows[0];
+    if (svc) {
+      const cleared = await client.query("UPDATE products SET image_url = NULL, image_credit = NULL WHERE service_id = $1 AND image_url ~ '^https?://'", [svc.id]);
+      let done = 0;
+      for (const [, file, name, section, unit, existing] of POOJA_PHOTOS) {
+        const img = `/products/pooja/${file}.jpg`;
+        const r = existing
+          ? await client.query('UPDATE products SET image_url = $3, image_credit = NULL, section = coalesce(section, $4) WHERE service_id = $1 AND name = $2',
+            [svc.id, existing, img, section])
+          : await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, icon, image_url, section, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'pack', '🪔', $5, $6, 9999)
+             ON CONFLICT (slug) DO UPDATE SET image_url = EXCLUDED.image_url, image_credit = NULL`,
+            [svc.id, `food-daily-pooja-store-${file}`, name, unit, img, section]);
+        done += r.rowCount;
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, POOJA_SECTIONS]);
+      await client.query(`UPDATE services SET image_url = '/popular/pooja.jpg', image_credit = NULL
+                           WHERE id = $1 AND (image_url IS NULL OR image_url ~ '^https?://')`, [svc.id]);
+      console.log(`🪔 Pooja Store: ${cleared.rowCount} licensed photos removed, ${done} products with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('pooja_ai_photos_v1', current_date::text)");
+  }
+
+  // One time (2026-10-26): 🛒 the 2nd batch of our own Kirana AI photos (kirana-photos.js KIRANA_PHOTOS_2) for the 70
+  // products that had none — each gets its photo and the brand on its pack. An admin's own photo is kept.
+  const kirana2Done = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_ai_photos_v2'");
+  if (!kirana2Done.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      let done = 0;
+      for (const [file, name, brand] of KIRANA_PHOTOS_2) {
+        const r = await client.query(
+          `UPDATE products SET image_url = $3, image_credit = NULL, brand = coalesce($4, brand)
+            WHERE service_id = $1 AND name = $2 AND (image_url IS NULL OR image_url ~ '^https?://')`,
+          [svc.id, name, `/products/kirana/${file}.jpg`, brand]);
+        done += r.rowCount;
+      }
+      console.log(`🛒 Kirana: ${done} more products with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_ai_photos_v2', current_date::text)");
+  }
+
+  // One time (2026-10-26): 🍞 Bread / Bakery with our own AI photos (db/bakery-photos.js, files in public/products/bakery/):
+  // the products we had get their photo; the others are added (as per the shop bill) in sections; the card photo →
+  // bakery.jpg (was a licensed web photo). Admin-uploaded photos are kept.
+  const bakeryDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'bakery_ai_photos_v1'");
+  if (!bakeryDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-bread-bakery-delivery'")).rows[0];
+    if (svc) {
+      let done = 0;
+      for (const [, file, name, section, unit, existing] of BAKERY_PHOTOS) {
+        const img = `/products/bakery/${file}.jpg`;
+        const r = existing
+          ? await client.query(
+            `UPDATE products SET image_url = CASE WHEN image_url IS NULL OR image_url ~ '^https?://' THEN $3 ELSE image_url END,
+                    image_credit = NULL, section = coalesce(section, $4) WHERE service_id = $1 AND name = $2`, [svc.id, existing, img, section])
+          : await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, icon, image_url, section, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'pack', '🍞', $5, $6, 9999)
+             ON CONFLICT (slug) DO UPDATE SET image_url = EXCLUDED.image_url, image_credit = NULL`,
+            [svc.id, `food-daily-bread-bakery-delivery-${file}`, name, unit, img, section]);
+        done += r.rowCount;
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, BAKERY_SECTIONS]);
+      await client.query(`UPDATE services SET image_url = '/popular/bakery.jpg', image_credit = NULL
+                           WHERE id = $1 AND (image_url IS NULL OR image_url ~ '^https?://')`, [svc.id]);
+      console.log(`🍞 Bread / Bakery: ${done} products with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('bakery_ai_photos_v1', current_date::text)");
+  }
+
+  // One time (2026-10-25): 🐾 Pet Food with our own AI photos (db/pet-photos.js, files in public/products/pet/):
+  // Adult Dog Food (Pedigree) and Cat Food (Whiskas) get theirs; the rest are new products, price as per the shop bill.
+  const petDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'pet_ai_photos_v1'");
+  if (!petDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-pet-food-delivery'")).rows[0];
+    if (svc) {
+      let done = 0;
+      for (const [, file, name, section, unit, existing] of PET_PHOTOS) {
+        const img = `/products/pet/${file}.jpg`;
+        const r = existing
+          ? await client.query(
+            `UPDATE products SET image_url = CASE WHEN image_url IS NULL OR image_url ~ '^https?://' THEN $3 ELSE image_url END,
+                    image_credit = NULL, section = coalesce(section, $4) WHERE service_id = $1 AND name = $2`, [svc.id, existing, img, section])
+          : await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, icon, image_url, section, sort_order)
+             VALUES ($1, $2, $3, $4, 0, 'pack', '🐾', $5, $6, 9999)
+             ON CONFLICT (slug) DO UPDATE SET image_url = EXCLUDED.image_url, image_credit = NULL`,
+            [svc.id, `food-daily-pet-food-delivery-${file}`, name, unit, img, section]);
+        done += r.rowCount;
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, PET_SECTIONS]);
+      await client.query(`UPDATE services SET image_url = '/popular/pet-food.jpg', image_credit = NULL
+                           WHERE id = $1 AND (image_url IS NULL OR image_url ~ '^https?://')`, [svc.id]);
+      console.log(`🐾 Pet Food: ${done} products with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('pet_ai_photos_v1', current_date::text)");
+  }
+
+  // One time (2026-10-25): 🥥 Fresh Coconut Delivery in ~20 minutes (was 45; only if still 45, so an admin's value is kept).
+  const coconutDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'coconut_20min_v1'");
+  if (!coconutDone.rowCount) {
+    await client.query("UPDATE services SET eta_minutes = 20 WHERE slug = 'food-daily-fresh-coconut-delivery' AND eta_minutes = 45");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('coconut_20min_v1', current_date::text)");
+    console.log('🥥 Fresh Coconut Delivery: ~20 minutes.');
+  }
+
+  // One time (2026-10-25): 🚗 Vehicle — Pickup / Drop for Servicing, Used Bike Inspection and Used Car Inspection
+  // switched off (user's choice). Not deleted — HQ can switch them on again in Master services.
+  const vehOffDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'vehicle_three_off_v1'");
+  if (!vehOffDone.rowCount) {
+    await client.query(`UPDATE services SET is_active = false
+                         WHERE slug IN ('vehicle-vehicle-pickup-drop-for-servicing', 'vehicle-used-bike-inspection', 'vehicle-used-car-inspection')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('vehicle_three_off_v1', current_date::text)");
+    console.log('🚗 Vehicle pickup/drop + used bike/car inspection switched off.');
+  }
+
+  // One time (2026-10-24): 🔥 Cooking Gas Booking off Food & Daily (user's choice). Switched off, not deleted — HQ can
+  // switch it on again in Master services; old orders keep their service.
+  const gasDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'gas_booking_off_v1'");
+  if (!gasDone.rowCount) {
+    await client.query("UPDATE services SET is_active = false WHERE slug = 'food-daily-cooking-gas-booking'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('gas_booking_off_v1', current_date::text)");
+    console.log('🔥 Cooking Gas Booking switched off.');
   }
 
   // One time (2026-10-22): ⚡ Instant Delivery promise 15 → 10 minutes (shown on the home card, the top bar and

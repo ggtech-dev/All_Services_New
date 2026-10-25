@@ -24,6 +24,10 @@ const LiveMap = lazy(() => import('./admin/LiveMap.jsx'));
 const Activity = lazy(() => import('./admin/Activity.jsx'));
 const Areas = lazy(() => import('./admin/Areas.jsx'));
 const PopularAdmin = lazy(() => import('./admin/PopularAdmin.jsx')); // ⭐ popular cards on the home page
+const TransportAdmin = lazy(() => import('./admin/TransportAdmin.jsx')); // 🚚 goods vehicles (the franchise adds; HQ sees)
+const OffersAdmin = lazy(() => import('./admin/OffersAdmin.jsx')); // 📢 shops' offers (HQ approves; the franchise sees its city)
+const MealAdmin = lazy(() => import('./admin/MealAdmin.jsx')); // 🍱 tomorrow's meals: daily menu, photo, kitchen count
+const FoodPrices = lazy(() => import('./super/FoodPrices.jsx')); // 💰 meal & cook prices for each city
 const Shops = lazy(() => import('./admin/Shops.jsx'));
 const Subscriptions = lazy(() => import('./admin/Subscriptions.jsx'));
 const ShareRideAdmin = lazy(() => import('./admin/ShareRideAdmin.jsx'));
@@ -39,6 +43,7 @@ const SuperAdmins = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ d
 const SuperUsers = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Users })));
 const Payments = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Payments })));
 const ReportCenter = lazy(() => import('./super/ReportCenter.jsx')); // 📈 all reports: choose a city, then a report
+const Waitlist = lazy(() => import('./super/Waitlist.jsx')); // 📍 where people want us ("Notify me" from places we don't serve yet)
 
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
 
@@ -67,6 +72,9 @@ const operationsRoutes = (
     <Route path="workers" element={<WorkersAdmin />} />
     <Route path="areas" element={<Areas />} />
     <Route path="popular" element={<PopularAdmin />} />
+    <Route path="meals" element={<MealAdmin />} />
+    <Route path="offers" element={<OffersAdmin />} />
+    <Route path="transport" element={<TransportAdmin />} />
     <Route path="shops" element={<Shops />} />
     <Route path="service-types" element={<ServiceTypes />} />
     <Route path="activity" element={<Activity />} />
@@ -99,6 +107,8 @@ export default function App() {
           <Route path="promotions" element={<AdminPromotions />} />
           <Route path="settings" element={<Settings />} />
           <Route path="digital" element={<DigitalAdmin />} />
+          <Route path="waitlist" element={<Waitlist />} />
+          <Route path="food-prices" element={<FoodPrices />} />
           <Route path="catalog-dashboard" element={<Dashboard />} />
           {operationsRoutes}
           <Route path="*" element={<Navigate to="/super" replace />} />

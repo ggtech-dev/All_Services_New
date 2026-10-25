@@ -31,10 +31,7 @@ export default function Navbar() {
               <Link to="/login" state={{ from: location.pathname + location.search }} className="btn btn-primary btn-sm nav-login">Log in</Link>
             </>
           ) : (<>
-          <span className="nav-user hide-phone">
-            Hi, <b>{user.fullName || user.username}</b>
-            {user.role !== 'customer' && <span className="role-badge">{user.role}</span>}
-          </span>
+          {/* no "Hi, name" here: the home page greets the customer by name */}
           {user.role === 'admin' && has('admin') && <Link to="/admin" className="btn btn-ghost">🛡️ <span className="hide-sm">Admin panel</span></Link>}
           {user.role === 'superadmin' && has('super') && <Link to="/super" className="btn btn-ghost">👑 <span className="hide-sm">HQ</span></Link>}
           {/* on phones Orders and Profile are in the bottom tabs; Log out is in Profile */}

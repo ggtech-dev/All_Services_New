@@ -22,6 +22,7 @@ export default function MyOrders() {
 
   return (
     <>
+      <Link to="/" className="back-link">← Home</Link>
       <h1 className="page-title">My orders</h1>
       <div className="order-list">
         {orders.map((o) => (

@@ -284,7 +284,7 @@ BEGIN
       IF NOT FOUND THEN
         RAISE EXCEPTION 'An item in your cart is no longer available. Please remove it and try again.' USING ERRCODE = '22023';
       END IF;
-      IF NOT v_prod.in_stock THEN
+      IF NOT fn_product_in_stock(v.franchise_id, v_prod.id) THEN
         RAISE EXCEPTION '% is out of stock. Please remove it from your cart.', v_prod.name USING ERRCODE = '22023';
       END IF;
       -- kg in 250 g steps, litres in 500 ml steps, packs / bunches / pieces 1–50

@@ -42,4 +42,4 @@ export const useCity = () => useStore(getCity);
 
 // The header value for a request: staff pages use the HQ choice, everything else the customer's city.
 export const franchiseHeaderFor = (path) =>
-  (/^\/(admin|super|franchise)(\/|$)/.test(path) ? getScope() : getCity());
+  (/^\/(admin|super|franchise|offers\/admin|transport\/admin)(\/|$)/.test(path) ? getScope() : getCity());

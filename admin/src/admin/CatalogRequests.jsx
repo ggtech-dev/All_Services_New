@@ -8,6 +8,8 @@ import MapView from '../components/LazyMap.jsx';
 // Requests for services/products, and 🗺️ areas / villages (new one, or switch one off — asked from the Areas page).
 //   Franchise admin: their requests to HQ (+ ask for a new one, cancel a waiting one).
 //   Super Admin: every franchise's requests → review, approve (switches it on / creates it) or reject.
+// 💰 price requests (homefood.sql fn_request_price): name = the item, unit = the price asked
+const PRICE_ITEMS = { veg: 'Veg meal plate', chicken: 'Chicken meal plate', mutton: 'Mutton meal plate', fish: 'Fish meal plate', cook_hour: 'Cook — per hour', cook_half: 'Cook — each extra half hour' };
 const STATUS = { pending: ['Waiting', '#f59e0b'], approved: ['Approved', '#16a34a'], rejected: ['Rejected', '#dc2626'], cancelled: ['Cancelled', '#94a3b8'] };
 const TABS = [['pending', 'Waiting'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['', 'All']];
 
@@ -55,6 +57,7 @@ export default function CatalogRequests() {
                 const [label, color] = STATUS[r.status];
                 const what = r.kind === 'area' ? <>{r.village_band ? '🏡 New village' : '🗺️ New area'}: <b>{r.name}</b>{r.km_from_center != null && <span className="muted small"> · {Number(r.km_from_center)} km from centre</span>}</>
                   : r.kind === 'area_off' ? <>🚫 Switch off area: <b>{r.locality_name || r.name}</b></>
+                  : r.kind === 'price' ? <>💰 Price: <b>{PRICE_ITEMS[r.name] || r.name}</b> → <b>₹{Number(r.unit)}</b></>
                   : r.kind === 'popular' ? <>⭐ Add to popular on home: <b>{r.name}</b></>
                   : r.kind === 'popular_off' ? <>⭐ Take off popular on home: <b>{r.name}</b></>
                   : r.kind === 'service'
@@ -95,7 +98,7 @@ function Decide({ request: r, onClose, onDone }) {
     setBusy(true);
     try {
       await api(`/super/requests/${r.id}/${kind}`, { method: 'POST', body: { note } });
-      toast(kind === 'approve' ? (r.kind === 'area_off' ? `Approved — switched off in ${r.city}` : `Approved — now visible in ${r.city}`) : 'Rejected');
+      toast(kind === 'approve' ? (r.kind === 'price' ? `Approved — ${PRICE_ITEMS[r.name] || r.name} in ${r.city} is now ₹${Number(r.unit)}` : r.kind === 'area_off' ? `Approved — switched off in ${r.city}` : `Approved — now visible in ${r.city}`) : 'Rejected');
       onDone();
     } catch (e) {
       toast(e.message, 'error');
@@ -119,6 +122,8 @@ function Decide({ request: r, onClose, onDone }) {
           </>
         ) : r.kind === 'area_off' ? (
           <p>🚫 Switch off <b>{r.locality_name || r.name}</b> in {r.city}. Customers can no longer choose it; old orders keep it.</p>
+        ) : r.kind === 'price' ? (
+          <p>💰 {r.city} asks to change <b>{PRICE_ITEMS[r.name] || r.name}</b> to <b>₹{Number(r.unit)}</b>. Approving sets this price for {r.city} only (see Food &amp; cook prices).</p>
         ) : r.kind === 'popular' || r.kind === 'popular_off' ? (
           <p>⭐ {r.kind === 'popular' ? 'Add' : 'Take off'} <b>{r.name}</b> {r.kind === 'popular' ? 'to' : 'from'} the “Our most popular services” cards in {r.city}. {r.kind === 'popular' ? 'It goes at the end; you can reorder and change the photo in Popular on home.' : ''} (If {r.city} still uses the all-cities list, it gets its own list — other cities don’t change.)</p>
         ) : (

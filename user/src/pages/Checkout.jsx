@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, priceTalk } from '../api.js';
 import PartnerNote from '../components/PartnerNote.jsx';
@@ -9,6 +9,7 @@ import { rupees } from '../orderStatus.jsx';
 import MapView from '../components/LazyMap.jsx';
 import { setCity, useCity } from '../scope.js';
 import { getPlace, setPlace } from '../place.js';
+import BackLink from '../components/BackLink.jsx';
 
 // Delivery / visit times: "As soon as possible", today's 2-hour windows that are still ahead (starting at least
 // 30 minutes from now), then tomorrow's. Services with a fixed window (vegetables 6–10 AM) use the server's slots.
@@ -22,6 +23,20 @@ function buildSlots(kind, now = new Date()) {
   const tomorrow = WINDOWS[kind].slice(0, Math.max(2, 5 - today.length)).map((w) => `Tomorrow ${span(w)}`);
   return ['As soon as possible', ...today, ...tomorrow];
 }
+// 👩‍🍳 the times a cook can start: every half hour 6:00 AM–8:30 PM, finishing by 10 PM; today at least an hour from now
+// (the server checks the same: fn_check_cook)
+function cookStartTimes(day, hours, now = new Date()) {
+  const ist = new Date(now.getTime() + (330 + now.getTimezoneOffset()) * 60000);
+  const earliest = day === 'today' ? ist.getHours() * 60 + ist.getMinutes() + 60 : 0;
+  const out = [];
+  for (let m = 6 * 60; m <= 20 * 60 + 30; m += 30) {
+    if (m < earliest || m + hours * 60 > 22 * 60) continue;
+    const h = Math.floor(m / 60), mm = m % 60;
+    out.push([`${String(h).padStart(2, '0')}:${mm ? '30' : '00'}`, `${h % 12 || 12}:${mm ? '30' : '00'} ${h < 12 ? 'AM' : 'PM'}`]);
+  }
+  return out;
+}
+const hoursLabel = (h) => (h === 1 ? '1 hour' : `${String(h).replace('.5', '½')} hours`);
 
 // Checkout for the cart (products) or for booking one service (?service=<slug>).
 export default function Checkout() {
@@ -60,9 +75,22 @@ export default function Checkout() {
   const isVisit = kind === 'service' && service?.parent_id != null;
   const isAmbulance = isVisit && /ambulance/i.test(service?.name || '');
   const [visit, setVisit] = useState({ mode: '', visit_date: '', visit_time: '10:00' });
-  const ahead = isEvent || isTrip || isVisit; // booked ahead: no time slots, no price — the partner calls to agree it
-  // no price from us (booked ahead, or a "price on discussion" service like plumber / electrician)
-  const talk = ahead || (kind === 'service' && priceTalk(service));
+  // 👩‍🍳 Book Your Cook: today / tomorrow, a start time, 1–8 hours (half hours too) — a fixed price for the city, from
+  // the server (homefood.sql), paid to the cook in cash after the work
+  const isCook = kind === 'service' && service?.skill_code === 'book_cook';
+  const [cook, setCook] = useState({ day: 'today', start: '', hours: 1, woman: false });
+  const [cookPrices, setCookPrices] = useState([]);
+  useEffect(() => {
+    if (isCook && !cookPrices.length) api('/cook-prices').then(setCookPrices).catch(() => {});
+  }, [isCook, cookPrices.length]);
+  const cookPrice = cookPrices.find((p) => p.hours === cook.hours)?.price ?? null;
+  const cookStarts = useMemo(() => cookStartTimes(cook.day, cook.hours), [cook.day, cook.hours]);
+  useEffect(() => {
+    if (isCook && cook.start && !cookStarts.some(([v]) => v === cook.start)) setCook((c) => ({ ...c, start: '' }));
+  }, [isCook, cook.start, cookStarts]);
+  const ahead = isEvent || isTrip || isVisit || isCook; // booked ahead: its own date & time, no time slots
+  // no price from us (booked ahead, or a "price on discussion" service like plumber / electrician) — the cook has one
+  const talk = (ahead && !isCook) || (kind === 'service' && priceTalk(service));
   const [tripOpts, setTripOpts] = useState(null);
   const [trip, setTrip] = useState({ trip_type: '', drop: '', trip_date: '', trip_time: '09:00', return_date: '', passengers: '', car_type: 'Any car', details: '' });
   useEffect(() => {
@@ -92,10 +120,13 @@ export default function Checkout() {
       const fits = z.areas.filter((l) => (village ? l.is_village : kind === 'service' || !l.is_village));
       setForm((f) => (fits.some((l) => String(l.id) === f.locality_id) ? f
         : { ...f, locality_id: fits[0] ? String(fits[0].id) : '', pincode: fits[0]?.pincode || f.pincode }));
-      // 📍 the top bar shows this spot from now on
+      // 📍 the top bar shows this spot from now on (a saved address on its own pin stays as it is)
       const n = z.nearest;
-      setPlace({ area: n?.name || '', locality_id: n?.id || null, city: z.franchise.city, franchise_id: z.franchise.id, village: !!n?.is_village,
-        lat: p.lat, lng: p.lng, accuracy: p.accuracy, gps: true, at: Date.now() });
+      const cur = getPlace();
+      if (!(cur?.address && cur.lat === p.lat && cur.lng === p.lng)) {
+        setPlace({ area: n?.name || '', locality_id: n?.id || null, city: z.franchise.city, franchise_id: z.franchise.id, village: !!n?.is_village,
+          lat: p.lat, lng: p.lng, accuracy: p.accuracy, gps: true, at: Date.now() });
+      }
     } catch (err) {
       setPinMsg(err.message);
     }
@@ -114,6 +145,8 @@ export default function Checkout() {
   useEffect(() => {
     const pl = getPlace();
     if (pl?.gps && pl.lat && pl.lng) applyPin({ lat: pl.lat, lng: pl.lng, accuracy: pl.accuracy });
+    // a saved address keeps its own pin (ordering for home from the office) — no fresh GPS over it
+    if (pl?.address && pl.lat) return;
     navigator.permissions?.query({ name: 'geolocation' }).then((s) => s.state === 'granted' && pinMyLocation()).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState('');
@@ -135,6 +168,14 @@ export default function Checkout() {
         if (t) setTrip({ trip_type: t.trip_type, drop: t.drop, trip_date: t.trip_date, trip_time: t.trip_time, return_date: t.return_date || '',
           passengers: t.passengers ? String(t.passengers) : '', car_type: t.car_type, details: t.details || '' });
       }).catch(() => {});
+      return;
+    }
+    // 🏠 a saved address chosen in the top bar comes first; otherwise the last address used
+    const saved = getPlace();
+    if (saved?.address && saved.locality_id) {
+      const a = saved.address;
+      setForm({ name: a.contact_name || user.fullName || '', phone: a.contact_phone || user.phone || '', address_line: a.address_line,
+        landmark: a.landmark || '', locality_id: String(saved.locality_id), pincode: a.pincode || '' });
       return;
     }
     api('/orders/last-address').then((a) => {
@@ -198,7 +239,9 @@ export default function Checkout() {
   };
 
   const lines = kind === 'service'
-    ? service ? [{ key: 's', icon: service.icon || service.category_icon, name: service.name, unit: service.price_unit, qty: 1, price: Number(service.base_price) }] : []
+    ? service ? [isCook
+      ? { key: 's', icon: service.icon || service.category_icon, name: service.name, unit: hoursLabel(cook.hours), qty: 1, price: cookPrice ?? 0 }
+      : { key: 's', icon: service.icon || service.category_icon, name: service.name, unit: service.price_unit, qty: 1, price: Number(service.base_price) }] : []
     : [
         ...cart.items.map((i) => ({
           key: i.product_id, icon: i.icon, name: i.name, unit: i.unit, qty: i.qty, price: i.price, product_id: i.product_id,
@@ -237,6 +280,7 @@ export default function Checkout() {
       if (isEvent) body.event = event;
       if (isTrip) body.trip = trip;
       if (isVisit) body.visit = visit;
+      if (isCook) body.cook = cook;
       if (rebookOf) body.rebook_of = rebookOf;
       if (!ahead) {
         if (instant) body.via_service_id = instant.id;
@@ -269,14 +313,15 @@ export default function Checkout() {
   return (
     <form className="checkout" onSubmit={place}>
       <div className="checkout-main">
-        {isVisit && service.parent_slug && <Link to={`/care/${service.parent_slug}`} className="back-link">← {service.parent_name}</Link>}
+        {isVisit && service.parent_slug ? <Link to={`/care/${service.parent_slug}`} className="back-link">← {service.parent_name}</Link>
+          : <BackLink to={service?.category_slug ? `/category/${service.category_slug}` : '/'}>Back</BackLink>}
         <h1>{kind === 'service' ? 'Book service' : instant ? `${village ? '🏡' : '⚡'} ${instant.name}` : 'Checkout'}</h1>
         {rebookOf && <div className="instant-banner rebook-banner">✏️ <span>{`Booking again — change anything you like. Your earlier booking #${rebookOf} is cancelled when you confirm.`}</span></div>}
         {instant && !village && <div className="instant-banner">⚡ <b>Instant order</b> — your delivery partner starts right away and reaches you in about <b>{quote.eta_minutes || 10} minutes</b>.</div>}
         {village && <div className="instant-banner village-banner">🏡 <span><b>Village delivery</b> — same-day delivery is not possible for villages. Choose <b>tomorrow</b> (or a later day) and a time below. Our own team brings it.</span></div>}
 
         <section className="panel form">
-          <h3>{isEvent ? '📍 Event venue' : isTrip || isAmbulance ? '🟢 Pickup address' : isVisit ? '📍 Patient address' : '📍 Delivery address'}</h3>
+          <h3>{isCook ? '📍 Your home address' : isEvent ? '📍 Event venue' : isTrip || isAmbulance ? '🟢 Pickup address' : isVisit ? '📍 Patient address' : '📍 Delivery address'}</h3>
           <div className="form-row">
             <label>Name<input value={form.name} onChange={set('name')} required placeholder="Who will receive it" /></label>
             <label>Mobile number<input value={form.phone} onChange={set('phone')} required inputMode="tel" placeholder="10-digit mobile" /></label>
@@ -293,9 +338,9 @@ export default function Checkout() {
                 ))}
               </select>
             </label>
-            <label>Pincode<input value={form.pincode} onChange={set('pincode')} inputMode="numeric" maxLength={6} placeholder="500072" /></label>
+            <label>Pincode<input value={form.pincode} onChange={set('pincode')} inputMode="numeric" maxLength={6} placeholder="502103" /></label>
           </div>
-          <label>Landmark (optional)<input value={form.landmark} onChange={set('landmark')} placeholder="e.g. Near KPHB metro station" /></label>
+          <label>Landmark (optional)<input value={form.landmark} onChange={set('landmark')} placeholder="e.g. Near Old Bus Stand" /></label>
           <div className="pin-row">
             <button type="button" className={`btn btn-sm ${pin ? 'btn-ghost' : 'btn-primary'}`} onClick={pinMyLocation}>📍 {pin ? 'Update my location' : 'Use my current location'}</button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMapPick(!mapPick)}>🗺️ {mapPick ? 'Hide map' : 'Set on map'}</button>
@@ -379,6 +424,40 @@ export default function Checkout() {
           </section>
         )}
 
+        {isCook && (
+          <section className="panel form cook-form">
+            <h3>👩‍🍳 When should the cook come?</h3>
+            <div className="when-choice cook-day" role="radiogroup" aria-label="Day">
+              {[['today', 'Today'], ['tomorrow', 'Tomorrow']].map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked={cook.day === k} className={cook.day === k ? 'active' : ''}
+                  onClick={() => setCook({ ...cook, day: k })}>{label}</button>
+              ))}
+            </div>
+            <label>Start time *
+              <select value={cook.start} onChange={(e) => setCook({ ...cook, start: e.target.value })} required>
+                <option value="">{cookStarts.length ? 'Choose a time…' : 'No time left today — choose tomorrow'}</option>
+                {cookStarts.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+            </label>
+            <div className="cook-hours">
+              <span className="cook-hours-label">How long?</span>
+              <div className="cook-stepper">
+                <button type="button" onClick={() => setCook({ ...cook, hours: Math.max(1, cook.hours - 0.5) })} disabled={cook.hours <= 1} aria-label="Half an hour less">−</button>
+                <b>{hoursLabel(cook.hours)}</b>
+                <button type="button" onClick={() => setCook({ ...cook, hours: Math.min(8, cook.hours + 0.5) })} disabled={cook.hours >= 8} aria-label="Half an hour more">+</button>
+              </div>
+              {cookPrice != null && <span className="cook-price">₹{cookPrice}</span>}
+            </div>
+            <p className="muted small">{cookPrices[0] ? `₹${cookPrices[0].price} an hour · ₹${(cookPrices[1]?.price ?? 0) - cookPrices[0].price} for an extra half hour — book by the hour, no full-day booking.` : ''}</p>
+            <label className="check-row">
+              <input type="checkbox" checked={cook.woman} onChange={(e) => setCook({ ...cook, woman: e.target.checked })} /> Prefer a woman cook
+            </label>
+            <label>Anything the cook should know? (optional)
+              <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Groceries are ready in the kitchen · 4 people" />
+            </label>
+          </section>
+        )}
+
         {isVisit && (
           <section className="panel form visit-form">
             <h3>🕐 When do you need {isAmbulance ? 'the ambulance' : 'the visit'}?</h3>
@@ -435,7 +514,12 @@ export default function Checkout() {
           </section>
         )}
 
-        {ahead ? (
+        {isCook ? (
+          <section className="panel">
+            <h3>💵 Price & payment</h3>
+            <p className="muted small">{cookPrice != null ? `₹${cookPrice} for ${hoursLabel(cook.hours)}. ` : ''}Pay the cook in cash (or UPI) after the work. The cook comes with no groceries — keep them ready, or order vegetables and kirana in the app.</p>
+          </section>
+        ) : ahead ? (
           <section className="panel">
             <h3>💬 Price & payment</h3>
             <p className="muted small">{isVisit
@@ -463,7 +547,7 @@ export default function Checkout() {
               <div className="summary-name">
                 <b>{l.name}</b>
                 <small className="muted">{l.unit}</small>
-                {l.note && <small className="item-note">✂️ {l.note}</small>}
+                {l.note && <small className="item-note">{/ Meal — /.test(l.name) ? '🍛' : '✂️'} {l.note}</small>}
               </div>
               {l.own || l.photo ? (
                 <button type="button" className="link-btn danger-text" onClick={() => (l.photo ? cart.setPhoto(null) : cart.removeLine(l.own.key))} aria-label={`Remove ${l.name}`}>Remove</button>
@@ -488,7 +572,7 @@ export default function Checkout() {
             <PartnerNote compact />
           </div>
         ) : <div className="totals">
-          {(subtotal > 0 || !hasBill) && <div><span>{kind === 'service' ? 'Service charge' : 'Items total'}</span><span>{rupees(subtotal)}</span></div>}
+          {(subtotal > 0 || !hasBill) && <div><span>{isCook ? `Cook · ${hoursLabel(cook.hours)}` : kind === 'service' ? 'Service charge' : 'Items total'}</span><span>{rupees(subtotal)}</span></div>}
           {hasBill && <div><span>Market-price items</span><span>as per shop bill</span></div>}
           {(kind === 'products' || quote.base_fee > 0) && (
             <div>
@@ -502,8 +586,8 @@ export default function Checkout() {
           <div className="grand"><span>To pay</span><span>{toPay}</span></div>
         </div>}
         {error && <div className="alert">{error}</div>}
-        <button className="btn btn-primary btn-block" disabled={busy || !lines.length || (village && !quote.village_ok) || quote.window_conflict || (windowSlots && !windowSlots.length) || (isVisit && !visit.mode)}>
-          {busy ? 'Placing…' : isEvent ? '🎉 Book event' : isTrip ? '🚗 Book car' : isAmbulance ? '🚑 Book ambulance' : isVisit ? '🩺 Book visit' : kind === 'service' ? (talk ? '📞 Book now' : `Confirm booking · ${toPay}`) : instant ? (village ? '🏡 Place village order' : '⚡ Place instant order') : hasBill ? 'Place order' : `Place order · ${toPay}`}
+        <button className="btn btn-primary btn-block" disabled={busy || !lines.length || (village && !quote.village_ok) || quote.window_conflict || (windowSlots && !windowSlots.length) || (isVisit && !visit.mode) || (isCook && (!cook.start || cookPrice == null))}>
+          {busy ? 'Placing…' : isCook ? `👩‍🍳 Book cook · ${toPay}` : isEvent ? '🎉 Book event' : isTrip ? '🚗 Book car' : isAmbulance ? '🚑 Book ambulance' : isVisit ? '🩺 Book visit' : kind === 'service' ? (talk ? '📞 Book now' : `Confirm booking · ${toPay}`) : instant ? (village ? '🏡 Place village order' : '⚡ Place instant order') : hasBill ? 'Place order' : `Place order · ${toPay}`}
         </button>
         {!talk && <p className="muted small center">{hasBill ? 'Market-price items are charged exactly as per the shop bill.' : 'Prices are checked again when you place the order.'}</p>}
       </aside>

@@ -1,6 +1,6 @@
 import { LANGS, getLang, setLang } from '../i18n.js';
 
-// Language switch: two small round buttons — A (English) · అ (తెలుగు). English is the default.
+// Language switch: "English | తెలుగు" (phones: "EN | తె" — the top bar is tight there). English is the default.
 export default function LangToggle({ className = '' }) {
   const current = getLang();
   return (
@@ -16,7 +16,8 @@ export default function LangToggle({ className = '' }) {
           aria-label={l.label}
           onClick={() => current !== l.code && setLang(l.code)}
         >
-          {l.short}
+          <span className="lang-long">{l.label}</span>
+          <span className="lang-short">{l.short}</span>
         </button>
       ))}
     </div>

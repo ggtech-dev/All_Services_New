@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { BellRing, Check, ChevronDown, Home as HomeIcon, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useCart } from '../cart.jsx';
@@ -72,9 +72,13 @@ const getPlaceNow = () => {
 };
 
 function LocationBox({ onClose }) {
+  const { user } = useAuth();
+  const place = usePlace();
   const cart = useCart();
   const city = useCity();
   const [areas, setAreas] = useState(null);
+  const [saved, setSaved] = useState([]); // 🏠 the customer's last 3 delivery addresses
+  const [outside, setOutside] = useState(null); // 🔔 a spot / place we don't deliver to yet: { lat, lng } or { text }
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -82,6 +86,7 @@ function LocationBox({ onClose }) {
 
   useEffect(() => {
     api('/localities?all=1').then((l) => setAreas(l.filter((x) => x.franchise_id))).catch(() => setAreas([]));
+    if (user) api('/orders/addresses').then(setSaved).catch(() => {});
     const esc = (e) => e.key === 'Escape' && onClose();
     const outside = (e) => box.current && !box.current.contains(e.target) && !e.target.closest('.loc-btn') && onClose();
     document.addEventListener('keydown', esc);
@@ -111,7 +116,8 @@ function LocationBox({ onClose }) {
         try {
           const z = await api(`/locate?lat=${lat}&lng=${lng}`);
           if (!z.franchise) {
-            setMsg("Sorry, we don't deliver to your location yet. You can still look around.");
+            setMsg('');
+            setOutside({ lat, lng });
             return;
           }
           const n = z.nearest;
@@ -147,6 +153,27 @@ function LocationBox({ onClose }) {
           <h2 id="loc-title">Change location</h2>
           <button type="button" className="loc-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
+        {saved.length > 0 && (
+          <div className="loc-saved">
+            <p className="loc-saved-title">Saved addresses</p>
+            {saved.map((a) => {
+              const current = place?.address?.address_line === a.address_line && place?.locality_id === a.locality_id;
+              return (
+                <button key={`${a.locality_id}-${a.address_line}`} type="button" className={`loc-saved-item${current ? ' current' : ''}`}
+                  onClick={() => choose({ area: a.area, locality_id: a.locality_id, city: a.city, franchise_id: a.franchise_id, village: a.is_village,
+                    ...(a.lat && a.lng && { lat: a.lat, lng: a.lng, gps: true }), at: Date.now(),
+                    address: { contact_name: a.contact_name, contact_phone: a.contact_phone, address_line: a.address_line, landmark: a.landmark || '', pincode: a.pincode || '' } })}>
+                  <span className="loc-saved-icon" aria-hidden="true"><HomeIcon size={17} /></span>
+                  <span className="loc-saved-text">
+                    <b translate="no">{a.address_line}</b>
+                    <small>{a.area}, {a.city}</small>
+                  </span>
+                  {current && <Check size={18} className="loc-saved-tick" aria-label="Current" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="loc-row">
           <button type="button" className="loc-detect" onClick={detect} disabled={busy}>
             <LocateFixed size={17} aria-hidden="true" /> <span>Detect my location</span>
@@ -158,6 +185,7 @@ function LocationBox({ onClose }) {
           </label>
         </div>
         {msg && <p className="loc-msg" role="status">{msg}</p>}
+        {outside && <NotifyMe where={outside} />}
         {q.trim() && (
           <ul className="loc-results">
             {found.map((l) => (
@@ -171,10 +199,68 @@ function LocationBox({ onClose }) {
                 </button>
               </li>
             ))}
-            {areas && !found.length && <li className="loc-none">We don't deliver there yet. Try your town or nearest village name.</li>}
+            {areas && !found.length && (
+              <li className="loc-none">
+                <span>We don't deliver there yet. Try your town or nearest village name.</span>
+                {!outside && (
+                  <button type="button" className="loc-notify-link" onClick={() => setOutside({ text: q.trim() })}>
+                    <BellRing size={15} aria-hidden="true" /> <span>Notify me when you start in</span> “{q.trim()}”
+                  </button>
+                )}
+              </li>
+            )}
           </ul>
         )}
       </div>
     </>
+  );
+}
+
+// 🔔 We don't deliver here yet: leave a mobile number, HQ calls when a city opens near this spot (db/waitlist.sql).
+function NotifyMe({ where }) {
+  const { user } = useAuth();
+  const [phone, setPhone] = useState((user?.phone || '').replace(/\D/g, '').slice(-10));
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [err, setErr] = useState('');
+  const send = async (e) => {
+    e.preventDefault();
+    setErr('');
+    if (!/^[6-9]\d{9}$/.test(phone)) return setErr('Please enter a valid 10-digit mobile number');
+    setBusy(true);
+    try {
+      await api('/waitlist', { method: 'POST', body: { phone, name: user?.fullName || '', lat: where.lat, lng: where.lng, place_text: where.text } });
+      setDone(phone);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (done) {
+    return (
+      <div className="loc-notify done" role="status">
+        <span className="loc-notify-icon" aria-hidden="true"><Check size={20} /></span>
+        <div>
+          <b>Thank you! We'll let you know</b>
+          <small>We'll call <span translate="no">{done}</span> as soon as All Services starts near you.</small>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form className="loc-notify" onSubmit={send}>
+      <span className="loc-notify-icon" aria-hidden="true"><BellRing size={20} /></span>
+      <div className="loc-notify-body">
+        <b>We're not in your area yet</b>
+        <small>{where.text ? <>Leave your number — we'll tell you when we start in <span translate="no">“{where.text}”</span>.</> : "Leave your number — we'll tell you as soon as we start near you."}</small>
+        <div className="loc-notify-row">
+          <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="tel"
+            placeholder="Mobile number" aria-label="Mobile number" />
+          <button type="submit" className="loc-notify-btn" disabled={busy}>{busy ? 'Saving…' : 'Notify me'}</button>
+        </div>
+        {err && <small className="loc-notify-err">{err}</small>}
+      </div>
+    </form>
   );
 }

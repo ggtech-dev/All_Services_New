@@ -12,6 +12,7 @@ export default function Account() {
   const { user, logout } = useAuth();
   return (
     <div className="stack">
+      <Link to="/" className="back-link">← Home</Link>
       <h1 className="page-title">My account</h1>
       <section className="panel profile-card">
         <div className="agent-avatar">{(user.fullName || user.username)[0].toUpperCase()}</div>
@@ -21,6 +22,8 @@ export default function Account() {
       </section>
       <AlertsCard who="customer" />
       <Link to="/share-ride/tickets" className="panel account-link">🎫 My Share Ride tickets <span>›</span></Link>
+      <Link to="/my-offers" className="panel account-link">📢 My shop offers <span>›</span></Link>
+      <Link to="/advertise" className="panel account-link">📣 Advertise your shop <span>›</span></Link>
       <MyComplaints />
       <AccountSecurity />
       <InstallButton />
