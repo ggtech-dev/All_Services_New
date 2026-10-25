@@ -161,17 +161,18 @@ router.get('/trip-options', async (req, res, next) => {
   }
 });
 
-// Photo credits (free-licence photos must name their author): every photo the app shows, grouped by credit.
+// Photo credits (free-licence photos must name their author): every web photo the app still shows, grouped by credit.
+// Our own photos (paths like /products/…) need no credit; category photos are not shown (Home uses icons), nor are
+// switched-off slides.
 router.get('/credits', async (req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT credit, array_agg(DISTINCT name ORDER BY name) AS used_for FROM (
-         SELECT image_credit AS credit, name FROM categories WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
-         UNION ALL SELECT image_credit, name FROM services WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
-         UNION ALL SELECT image_credit, name FROM products WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
-         UNION ALL SELECT image_credit, name FROM promotions WHERE image_url IS NOT NULL AND image_credit IS NOT NULL
-         UNION ALL SELECT image_credit, title FROM home_popular WHERE is_active AND image_url IS NOT NULL AND image_credit IS NOT NULL
-       ) x WHERE trim(credit) <> '' GROUP BY credit ORDER BY min(name)`
+         SELECT image_credit AS credit, name, image_url FROM services WHERE is_active
+         UNION ALL SELECT image_credit, name, image_url FROM products WHERE is_active
+         UNION ALL SELECT image_credit, name, image_url FROM promotions WHERE is_active
+         UNION ALL SELECT image_credit, title, image_url FROM home_popular WHERE is_active
+       ) x WHERE image_url ~ '^https?://' AND trim(coalesce(credit, '')) <> '' GROUP BY credit ORDER BY min(name)`
     );
     res.set('Cache-Control', 'public, max-age=3600');
     res.json(rows);

@@ -15,13 +15,15 @@ import { FRUITS } from './fruits.js';
 import { POOJA_PHOTOS, POOJA_SECTIONS } from './pooja-photos.js';
 import { BAKERY_PHOTOS, BAKERY_SECTIONS } from './bakery-photos.js';
 import { PET_PHOTOS, PET_SECTIONS } from './pet-photos.js';
+import { DAILY_PHOTOS } from './daily-photos.js';
 
 const refreshImages = process.argv.includes('--refresh-images');
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const sql = (file) => readFile(new URL(file, import.meta.url), 'utf8');
-// images.json is produced by fetch-images.js; a missing entry leaves the image empty (UI shows an emoji tile).
+// images.json is produced by fetch-images.js (licensed web photos). Since 2026-10-25 the app uses only our own photos,
+// so a web photo from it is never set again (a missing image leaves the emoji/icon tile).
 const images = JSON.parse(await sql('./images.json').catch(() => '{}'));
-const image = (keywords) => images[keywords] || {};
+const image = (keywords) => (/^https?:\/\//.test(images[keywords]?.url || '') ? {} : images[keywords] || {});
 
 const defaultSettings = {
   banner_title: 'What do you need today?',
@@ -1094,6 +1096,117 @@ try {
     await client.query("INSERT INTO site_settings (key, value) VALUES ('pet_ai_photos_v1', current_date::text)");
   }
 
+  // One time (2026-10-25): 🛠️ Shop For Me service cards get our own AI photos (public/products/shop-for-me/<name>.jpg,
+  // name = service slug without "shop-for-me-"). A photo an admin already set is kept.
+  const sfmPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'shop_for_me_photos_v1'");
+  if (!sfmPhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services SET image_url = '/products/shop-for-me/' || substr(slug, 13) || '.jpg', image_credit = NULL
+        WHERE slug = ANY ($1) AND (image_url IS NULL OR image_url ~ '^https?://')`,
+      [['plumbing-sanitary-items', 'electrical-items', 'hardware-tools-paint', 'mobile-computer-accessories',
+        'household-utility-items', 'garden-plant-supplies', 'stationery-small-items', 'anything-else-small-items'].map((n) => `shop-for-me-${n}`)]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('shop_for_me_photos_v1', current_date::text)");
+    console.log(`🛠️ Shop For Me: ${r.rowCount} service cards with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 🎉 Events service cards get our own AI photos (public/products/events/<name>.jpg,
+  // name = service slug without "events-"). A photo an admin already set is kept.
+  const eventPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'events_photos_v1'");
+  if (!eventPhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services SET image_url = '/products/events/' || substr(slug, 8) || '.jpg', image_credit = NULL
+        WHERE slug = ANY ($1) AND (image_url IS NULL OR image_url ~ '^https?://')`,
+      [['photography', 'videography', 'wedding-planning', 'decoration', 'tent-house-rentals', 'catering', 'makeup-beauty',
+        'entertainment', 'invitations', 'event-equipment', 'other-event-services'].map((n) => `events-${n}`)]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('events_photos_v1', current_date::text)");
+    console.log(`🎉 Events: ${r.rowCount} service cards with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 🚚 the SAMPLE goods vehicles get our own AI photo of their type
+  // (public/products/transport/<name>.jpg). Real vehicles keep the photos their franchise admin uploads.
+  const transportPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'transport_sample_photos_v1'");
+  if (!transportPhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE transport_vehicles v SET photos = ARRAY['/products/transport/' || x.file || '.jpg'], updated_at = now()
+         FROM (VALUES ('ace', 'open', 'tata-ace-open'), ('ace', 'closed', 'tata-ace-closed'), ('pickup', NULL, 'bolero-pickup-open'),
+                      ('auto', 'open', 'goods-auto-open'), ('auto', 'closed', 'goods-auto-closed'), ('dcm', NULL, 'dcm-mini-truck'),
+                      ('tractor', NULL, 'tractor-trolley'), ('lorry', NULL, 'lorry')) AS x(vtype, body, file)
+        WHERE v.is_sample AND cardinality(v.photos) = 0 AND v.vehicle_type = x.vtype AND (x.body IS NULL OR v.body = x.body)`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('transport_sample_photos_v1', current_date::text)");
+    console.log(`🚚 Goods Transportation: ${r.rowCount} sample vehicles with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 🥛🍗🍱 priority-1 daily sellers get our own AI photos (db/daily-photos.js, files in
+  // public/products/daily/): replaces licensed web photos and fills empty ones; our own photos are kept.
+  const dailyPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'daily_photos_v1'");
+  if (!dailyPhotosDone.rowCount) {
+    let done = 0;
+    for (const [file, slug, name] of DAILY_PHOTOS) {
+      const r = await client.query(
+        `UPDATE products p SET image_url = $3, image_credit = NULL
+           FROM services s WHERE s.id = p.service_id AND s.slug = $1 AND p.name = $2
+            AND (p.image_url IS NULL OR p.image_url ~ '^https?://')`, [slug, name, `/products/daily/${file}.jpg`]);
+      done += r.rowCount;
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('daily_photos_v1', current_date::text)");
+    console.log(`🥛 Daily sellers: ${done} products with our AI photos (milk, eggs, meat & fish, fruits, meals, snacks).`);
+  }
+
+  // One time (2026-10-25): their service cards too (were licensed web photos) — 3:2 cards made from the same photos.
+  const dailyCardsDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'daily_cards_v1'");
+  if (!dailyCardsDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services s SET image_url = '/products/daily/card-' || x.card || '.jpg', image_credit = NULL
+         FROM (VALUES ('food-daily-fresh-milk', 'milk'), ('food-daily-egg-delivery', 'eggs'), ('food-daily-fresh-coconut-delivery', 'coconut'),
+                      ('home-services-drinking-water-delivery-20l-cans-bottles', 'water-can')) AS x(slug, card)
+        WHERE s.slug = x.slug AND (s.image_url IS NULL OR s.image_url ~ '^https?://')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('daily_cards_v1', current_date::text)");
+    console.log(`🥛 ${r.rowCount} service cards (milk, eggs, coconut, water can) with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 💡 Digital Services photo (our AI image, public/products/digital/card.jpg); the page header
+  // uses public/products/digital/banner.jpg (CSS).
+  const digitalPhotoDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'digital_photo_v1'");
+  if (!digitalPhotoDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/products/digital/card.jpg', image_credit = NULL
+                         WHERE slug = 'digital-services-digital-services' AND (image_url IS NULL OR image_url ~ '^https?://')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('digital_photo_v1', current_date::text)");
+    console.log('💡 Digital Services: our AI photo.');
+  }
+
+  // One time (2026-10-25): 🏠 Home Services cards get our own AI photos (public/products/home-services/<name>.jpg) instead
+  // of licensed web photos. Electrician on Demand waits for a new file (the one sent was incomplete).
+  const homePhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'home_services_photos_v1'");
+  if (!homePhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services s SET image_url = '/products/home-services/' || x.file || '.jpg', image_credit = NULL
+         FROM unnest($1::text[], $2::text[]) AS x(slug, file)
+        WHERE s.slug = x.slug AND (s.image_url IS NULL OR s.image_url ~ '^https?://')`,
+      [['water-tank-cleaning', 'water-filter-ro-service', 'plumber-on-demand', 'ac-service', 'washing-machine-repair', 'refrigerator-repair',
+        'tv-electronics-repair', 'carpenter', 'painter', 'home-cleaning', 'bathroom-kitchen-deep-cleaning', 'pest-control',
+        'sofa-carpet-cleaning', 'laundry-pickup-delivery', 'ironing-pickup-delivery'].map((n) => `home-services-${n}`),
+       ['water-tanker-supply', 'water-filter-ro-service', 'plumber-on-demand', 'ac-service', 'washing-machine-repair', 'refrigerator-repair',
+        'tv-electronics-repair', 'carpenter', 'painter', 'home-cleaning', 'bathroom-kitchen-deep-cleaning', 'pest-control',
+        'sofa-carpet-cleaning', 'laundry-pickup-delivery', 'ironing-pickup-delivery']]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('home_services_photos_v1', current_date::text)");
+    console.log(`🏠 Home Services: ${r.rowCount} cards with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 📷 the two Home slides still on licensed photos get ours (plumber, milk); every photo that is
+  // now our own loses its old photographer credit (the Photo credits page lists only web photos still shown).
+  const creditsDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'credits_cleanup_v1'");
+  if (!creditsDone.rowCount) {
+    await client.query(`UPDATE promotions SET image_url = x.img, image_credit = NULL
+                          FROM (VALUES ('Plumber in 60 minutes', '/products/home-services/plumber-on-demand.jpg'),
+                                       ('Fresh milk 6–9 AM', '/products/daily/organic-cow-milk.jpg')) AS x(name, img)
+                         WHERE promotions.name = x.name AND promotions.image_url ~ '^https?://'`);
+    for (const t of ['categories', 'services', 'products', 'promotions', 'home_popular']) {
+      await client.query(`UPDATE ${t} SET image_credit = NULL WHERE image_credit IS NOT NULL AND (image_url IS NULL OR image_url !~ '^https?://')`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('credits_cleanup_v1', current_date::text)");
+    console.log('📷 Photo credits: only web photos still shown are listed.');
+  }
+
   // One time (2026-10-25): 🥥 Fresh Coconut Delivery in ~20 minutes (was 45; only if still 45, so an admin's value is kept).
   const coconutDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'coconut_20min_v1'");
   if (!coconutDone.rowCount) {
@@ -1119,6 +1232,97 @@ try {
     await client.query("UPDATE services SET is_active = false WHERE slug = 'food-daily-cooking-gas-booking'");
     await client.query("INSERT INTO site_settings (key, value) VALUES ('gas_booking_off_v1', current_date::text)");
     console.log('🔥 Cooking Gas Booking switched off.');
+  }
+
+  // One time (2026-10-25): 🏥 Medicine Delivery, Blood Sample Collection, Physiotherapy and Elderly Care switched off for
+  // now (user's choice, "see later"). Not deleted — HQ can switch them on again in Master services.
+  const healthFourDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'health_four_off_v1'");
+  if (!healthFourDone.rowCount) {
+    await client.query(`UPDATE services SET is_active = false
+                         WHERE slug IN ('health-medicine-delivery', 'health-blood-sample-collection-at-home', 'health-physiotherapy-home-visit',
+                                        'health-elderly-care-patient-attendant')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('health_four_off_v1', current_date::text)");
+    console.log('🏥 Medicine Delivery, Blood Sample Collection, Physiotherapy, Elderly Care switched off.');
+  }
+
+  // One time (2026-10-25): 💇 Family & Personal Services cards get our own AI photos (public/products/personal/<name>.jpg,
+  // name = service slug without "personal-") instead of licensed web photos (their credits go too). Computer / Laptop
+  // Repair waits for a new file (the one sent was incomplete).
+  const personalPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'personal_photos_v1'");
+  if (!personalPhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services SET image_url = '/products/personal/' || substr(slug, 10) || '.jpg', image_credit = NULL
+        WHERE slug = ANY ($1) AND (image_url IS NULL OR image_url ~ '^https?://')`,
+      [['barber-home-service', 'beauty-salon-at-home', 'tailoring-pickup-delivery', 'shoe-repair-pickup', 'bag-repair', 'watch-repair-pickup',
+        'mobile-phone-repair-pickup', 'home-tuition', 'school-bag-books-uniform-delivery', 'baby-product-delivery', 'pet-grooming',
+        'pet-walking'].map((n) => `personal-${n}`)]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('personal_photos_v1', current_date::text)");
+    console.log(`💇 Family & Personal: ${r.rowCount} cards with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 🛒 Monthly Grocery Subscription — our own AI photos for the card and both packs
+  // (public/products/monthly/), instead of a licensed web photo (its credit goes too).
+  const monthlyPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'monthly_photos_v1'");
+  if (!monthlyPhotosDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/products/monthly/card.jpg', image_credit = NULL
+                         WHERE slug = 'food-daily-monthly-grocery-subscription' AND (image_url IS NULL OR image_url ~ '^https?://')`);
+    await client.query(`UPDATE products p SET image_url = '/products/monthly/' || x.file || '.jpg', image_credit = NULL
+                          FROM services s, (VALUES ('Basic Family Pack%', 'basic'), ('Premium Family Pack%', 'premium')) AS x(name, file)
+                         WHERE s.id = p.service_id AND s.slug = 'food-daily-monthly-grocery-subscription' AND p.name LIKE x.name
+                           AND (p.image_url IS NULL OR p.image_url ~ '^https?://')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('monthly_photos_v1', current_date::text)");
+    console.log('🛒 Monthly Grocery Subscription: our AI photos (card + 2 packs).');
+  }
+
+  // One time (2026-10-25): 🚗 Vehicle Services cards get our own AI photos (public/products/vehicle/<name>.jpg,
+  // name = service slug without "vehicle-") instead of licensed web photos (their credits go too).
+  const vehiclePhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'vehicle_photos_v1'");
+  if (!vehiclePhotosDone.rowCount) {
+    const r = await client.query(
+      `UPDATE services SET image_url = '/products/vehicle/' || substr(slug, 9) || '.jpg', image_credit = NULL
+        WHERE slug = ANY ($1) AND (image_url IS NULL OR image_url ~ '^https?://')`,
+      [['bike-puncture-service', 'mobile-bike-repair', 'car-puncture-service', 'car-wash-at-home', 'bike-wash-at-home', 'car-detailing',
+        'battery-replacement', 'towing-service'].map((n) => `vehicle-${n}`)]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('vehicle_photos_v1', current_date::text)");
+    console.log(`🚗 Vehicle Services: ${r.rowCount} cards with our AI photos.`);
+  }
+
+  // One time (2026-10-25): 📷 the last two licensed web photos (Electrician on Demand, Computer / Laptop Repair) are
+  // removed with their credits (user's choice) — the cards show the service icon until our own photos come.
+  const lastWebDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'last_web_photos_off_v1'");
+  if (!lastWebDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = NULL, image_credit = NULL
+                         WHERE slug IN ('home-services-electrician-on-demand', 'personal-computer-laptop-repair') AND image_url ~ '^https?://'`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('last_web_photos_off_v1', current_date::text)");
+    console.log('📷 Electrician + Laptop Repair: licensed web photos removed (icon until our photos come).');
+  }
+
+  // One time (2026-10-25): 📷 no licensed web photo is kept anywhere — also not on things customers don't see now
+  // (category photos, switched-off services and slides), so nothing licensed comes back if one is switched on again.
+  const webCleanDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'web_photos_cleanup_v1'");
+  if (!webCleanDone.rowCount) {
+    let n = 0;
+    for (const t of ['categories', 'services', 'products', 'promotions', 'home_popular']) {
+      n += (await client.query(`UPDATE ${t} SET image_url = NULL, image_credit = NULL WHERE image_url ~ '^https?://'`)).rowCount;
+      await client.query(`UPDATE ${t} SET image_credit = NULL WHERE image_credit IS NOT NULL`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('web_photos_cleanup_v1', current_date::text)");
+    console.log(`📷 ${n} leftover licensed web photos removed (with their credits).`);
+  }
+
+  // One time (2026-10-25): 🚗 Car Rental — our own AI photo on the Car Booking card, and a Home slide with it that opens
+  // the Car Rental page (HQ can edit or switch the slide off in Promotions).
+  const carRentalDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'car_rental_photo_v1'");
+  if (!carRentalDone.rowCount) {
+    await client.query(`UPDATE services SET image_url = '/products/vehicle/car-booking.jpg', image_credit = NULL
+                         WHERE slug = 'vehicle-rental-car-booking' AND (image_url IS NULL OR image_url ~ '^https?://')`);
+    await client.query(
+      `INSERT INTO promotions (name, title, subtitle, cta_text, link_type, link_value, placement, bg_color, sort_order, image_url)
+       SELECT 'Car Rental slide', '🚗 Car Rental with driver', 'Innova, Ertiga, Dzire & more — family trips, functions and airport drops',
+              'Book a car', 'category', 'vehicle-rental', 'carousel', '#0e7490', 9, '/products/vehicle/car-booking.jpg'
+        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE name = 'Car Rental slide')`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('car_rental_photo_v1', current_date::text)");
+    console.log('🚗 Car Rental: our AI photo + Home slide.');
   }
 
   // One time (2026-10-22): ⚡ Instant Delivery promise 15 → 10 minutes (shown on the home card, the top bar and

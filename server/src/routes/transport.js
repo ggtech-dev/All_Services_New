@@ -98,7 +98,8 @@ const save = (withId) => h(async (req, res) => {
   if (!withId && req.scope == null) return res.status(400).json({ error: 'Choose the city first' });
   const b = req.body || {};
   let keep = [];
-  try { keep = JSON.parse(b.keep || '[]').filter((u) => typeof u === 'string' && u.startsWith('/uploads/')); } catch { keep = []; }
+  // uploaded photos, or our own vehicle-type photos that the sample vehicles use (files of the app itself)
+  try { keep = JSON.parse(b.keep || '[]').filter((u) => typeof u === 'string' && /^\/(uploads|products\/transport)\/[\w.-]+$/.test(u)); } catch { keep = []; }
   const bool = (v) => (v === 'true' || v === true ? true : v === 'false' || v === false ? false : null);
   const p = {
     vehicle_type: text(b.vehicle_type, 10), model: text(b.model, 60), capacity: text(b.capacity, 40), body: text(b.body, 10) || 'open',

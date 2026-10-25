@@ -991,7 +991,15 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 @media (max-width: 520px) { .worker-card { grid-template-columns: 44px 1fr; } .worker-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; } .worker-actions .link-btn { grid-column: 1 / -1; } }
 
 /* 💡 Digital Services */
-.digital-hero { background: linear-gradient(135deg, #1e3a8a, #2563eb 60%, #60a5fa); }
+/* our AI workspace photo behind the header; a blue shade on the text side keeps it readable */
+.digital-hero { min-height: 190px; display: flex; flex-direction: column; justify-content: center; background-color: #1e3a8a;
+  background-image: linear-gradient(90deg, rgba(30, 58, 138, .95) 0%, rgba(37, 99, 235, .82) 45%, rgba(37, 99, 235, .15) 100%), url('/products/digital/banner.jpg');
+  background-size: cover; background-position: center right; }
+.digital-hero p { max-width: 460px; }
+@media (max-width: 600px) {
+  .digital-hero { background-image: linear-gradient(180deg, rgba(30, 58, 138, .9) 0%, rgba(30, 58, 138, .7) 55%, rgba(30, 58, 138, .35) 100%), url('/products/digital/banner.jpg');
+    background-position: 68% center; text-shadow: 0 1px 8px rgba(15, 23, 42, .45); }
+}
 .digital-tagline { font-weight: 700; font-size: 18px; margin-bottom: 4px !important; }
 .digital-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .digital-card { display: grid; gap: 4px; text-align: left; padding: 16px; border-radius: 16px; border: 1px solid var(--border, #e5e7eb); background: #fff; font: inherit; cursor: pointer; }

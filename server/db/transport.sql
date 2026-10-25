@@ -52,7 +52,7 @@ DECLARE
   v_phone  TEXT := regexp_replace(coalesce(p->>'phone', ''), '\D', '', 'g');
   v_number TEXT := upper(regexp_replace(trim(coalesce(p->>'vehicle_number', '')), '\s+', ' ', 'g'));
   v_city   INT := coalesce(p_franchise, (SELECT franchise_id FROM transport_vehicles WHERE id = p_id));
-  v_photos TEXT[] := ARRAY(SELECT x FROM jsonb_array_elements_text(coalesce(p->'photos', '[]'::jsonb)) x WHERE x ~ '^/uploads/' LIMIT 3);
+  v_photos TEXT[] := ARRAY(SELECT x FROM jsonb_array_elements_text(coalesce(p->'photos', '[]'::jsonb)) x WHERE x ~ '^/(uploads|products/transport)/[\w.-]+$' LIMIT 3); -- uploaded, or our own vehicle-type photo (samples)
 BEGIN
   IF length(v_phone) = 12 AND v_phone LIKE '91%' THEN v_phone := substr(v_phone, 3); END IF;
   IF coalesce(p->>'vehicle_type', '') NOT IN ('ace', 'pickup', 'auto', 'dcm', 'tempo', 'tractor', 'lorry', 'other') THEN
