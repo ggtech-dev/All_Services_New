@@ -23,6 +23,7 @@ import Transport from './pages/Transport.jsx';
 import Welcome, { welcomeSeen } from './pages/Welcome.jsx';
 import BottomTabs from './components/BottomTabs.jsx';
 import HelpFab from './components/HelpFab.jsx';
+import SetPasswordGate from './components/SetPassword.jsx';
 
 // 👤 All Services — customer app: shop, book services, track orders.
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
@@ -43,6 +44,7 @@ function Open({ children }) {
       <main className="container">{children}</main>
       <BottomTabs />
       <HelpFab />
+      <SetPasswordGate />
     </>
   );
 }
