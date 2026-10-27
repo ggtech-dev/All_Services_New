@@ -22,6 +22,11 @@ export default function Category() {
     setError('');
     api(`/categories/${slug}`).then(setData).catch((e) => setError(e.message));
   }, [slug]);
+  // 🚗 Vehicle Rental: the cars themselves (photo, seats) — tapping one opens the booking with that car chosen
+  const [cars, setCars] = useState(null);
+  useEffect(() => {
+    if (slug === 'vehicle-rental') api('/trip-options').then((t) => setCars(t.cars || [])).catch(() => setCars([]));
+  }, [slug]);
 
   const services = useMemo(
     () => (data?.services || []).filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),
@@ -51,13 +56,36 @@ export default function Category() {
           <h1>{category.name}</h1>
           <p>{category.description}</p>
         </div>
-        <input className="search" placeholder="Search services…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {category.slug !== 'vehicle-rental' && <input className="search" placeholder="Search services…" value={search} onChange={(e) => setSearch(e.target.value)} />}
       </section>
-      {data.services.some(priceTalk) && <PartnerNote />}
+      {data.services.some(priceTalk) && <PartnerNote kind={category.slug === 'vehicle-rental' ? 'car' : 'service'} />}
       {category.slug === 'shop-for-me' && (
         <p className="market-note">🛠️ Small things from town shops. Write what you need (or send a photo) — a delivery partner buys it and brings it. <b>Up to 3 items per order · ₹50 delivery</b> · you pay as per the shop bill.</p>
       )}
 
+      {category.slug === 'vehicle-rental' && cars?.length > 0 && data.services[0] ? (
+        <>
+          <h2 className="shop-section-title">🚗 Choose your car <span className="muted">· with driver</span></h2>
+          <div className="service-grid rental-cars">
+            {[{ id: '', name: 'Any car', seats: null, image_url: null }, ...cars].map((c) => (
+              <Link key={c.id || 'any'} to={`/checkout?service=${data.services[0].slug}${c.id ? `&car=${c.id}` : ''}`}
+                className="service-card rental-car" style={{ '--accent': category.color }}>
+                <div className="service-img">
+                  {c.image_url ? <img src={c.image_url} alt={c.name} loading="lazy" /> : <span className="rental-any" aria-hidden="true">✨🚗</span>}
+                </div>
+                <div className="service-body">
+                  <h3>{c.name}</h3>
+                  <div className="service-meta">
+                    <span className="price">{c.seats ? `${c.seats} seats` : 'quickest reply'}</span>
+                    <span className="eta">💬 price: talk to the driver</span>
+                  </div>
+                  <span className="btn btn-primary btn-sm btn-center" style={{ '--accent': category.color }}>{c.id ? 'Book this car →' : 'Book any car →'}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : (
       <div className="service-grid">
         {services.map((s) => (
           <article key={s.id} className={`service-card ${s.is_featured ? 'service-featured' : ''}`} style={{ '--accent': category.color }}>
@@ -95,6 +123,7 @@ export default function Category() {
         ))}
         {!services.length && <p className="muted">No services match “{search}”.</p>}
       </div>
+      )}
     </>
   );
 }

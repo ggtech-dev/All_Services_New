@@ -435,6 +435,15 @@ router.put('/home-food-prices/:franchise', h(async (req, res) => {
   res.json(rows[0].p.find((f) => f.franchise_id === id(req.params.franchise)) || null);
 }));
 
+// 🔎 What customers ask for, per city (?franchise=, all when empty; ?days=30): searches with nothing found + items they
+// wrote themselves (db/demand.sql)
+router.get('/demand', h(async (req, res) => {
+  const f = /^\d+$/.test(String(req.query.franchise || '')) ? Number(req.query.franchise) : null;
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+  const { rows } = await query('SELECT fn_demand_report($1, $2) AS r', [f, days]);
+  res.json(rows[0].r);
+}));
+
 router.get('/waitlist', h(async (req, res) => {
   const st = ['waiting', 'contacted', 'started', 'closed', 'all'].includes(req.query.status) ? req.query.status : 'waiting';
   const { rows } = await query('SELECT fn_waitlist_report($1) AS r', [st]);

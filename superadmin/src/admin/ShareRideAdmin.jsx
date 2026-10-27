@@ -91,7 +91,10 @@ export default function ShareRideAdmin() {
                   return (
                     <tr key={c.id}>
                       <td><b>{c.reg_number}</b><div className="small muted">{c.model}{c.color ? ` · ${c.color}` : ''}{c.city ? ` · ${c.city}` : ''}</div></td>
-                      <td>{c.owner_name}<div className="small muted">+91 {c.owner_phone} · agent {c.owner_status}</div></td>
+                      <td>{c.owner_name}<div className="small muted">+91 {c.owner_phone} · agent {c.owner_status}</div>
+                        {/* what the partner does with the car: 🚙 Car Rental (bookings for this model) and/or 🚗 Share Ride */}
+                        <div className="small">{[(c.owner_skills || []).includes('car_rental_agent') && '🚙 Car Rental',
+                          (c.owner_skills || []).includes('shared_car_agent') && '🚗 Share Ride'].filter(Boolean).join(' · ')}</div></td>
                       <td className="doc-btns">{DOCS.map(([f, l, has]) => c[has] && <button key={f} className="btn btn-ghost btn-sm" onClick={() => openDoc(c, f)}>📄 {l}</button>)}</td>
                       <td>
                         <span className={`ride-status ${tone}`}>{label}</span>

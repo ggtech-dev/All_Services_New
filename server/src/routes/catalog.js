@@ -282,6 +282,24 @@ router.get('/home-cards', async (req, res, next) => {
 
 // 🔍 Home search: ?q=plumber → services (by name, description or category) and items (by name or brand) in the
 // customer's city. Each result says where it opens: a shop page, a booking, or a category with its own page.
+// 🔎 "Nothing found" for a search the customer looked at (sent by the app): HQ sees what each city asks for
+// (demand.sql — only the words and the city). At most 20 an hour from one connection.
+const recentMisses = new Map();
+router.post('/search/miss', async (req, res, next) => {
+  try {
+    const key = req.get('x-forwarded-for') || req.ip;
+    const now = Date.now();
+    const mine = (recentMisses.get(key) || []).filter((t) => t > now - 3_600_000);
+    if (mine.length >= 20) return res.status(204).end();
+    recentMisses.set(key, [...mine, now]);
+    if (recentMisses.size > 20000) for (const [k, ts] of recentMisses) if (!ts.some((t) => t > now - 3_600_000)) recentMisses.delete(k);
+    await query('CALL sp_search_miss($1, $2)', [cityOf(req), String(req.body?.q ?? '').slice(0, 100)]);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/search', async (req, res, next) => {
   try {
     const q = String(req.query.q || '').trim().slice(0, 60);
@@ -302,11 +320,14 @@ router.get('/search', async (req, res, next) => {
             AND (s.name ILIKE ANY($1) OR s.description ILIKE ANY($1) OR c.name ILIKE ANY($1) OR ($3 AND s.skill_code = 'instant'))
           ORDER BY ($3 AND s.skill_code = 'instant') DESC, (s.name ILIKE ANY($1)) DESC, c.sort_order, s.sort_order LIMIT 20`, [likes, cityOf(req), fast]),
       query(
-        `SELECT p.name, p.brand, p.unit, p.price, s.slug AS service_slug, s.name AS service_name, s.price_on_bill
+        // 📦 the pack sizes of one product are one row: "100 g · 150 g · 200 g" (small → big)
+        `SELECT min(p.name) AS name, min(p.brand) AS brand, string_agg(p.unit, ' · ' ORDER BY fn_pack_qty(p.unit), p.id) AS unit,
+                min(p.price) AS price, s.slug AS service_slug, s.name AS service_name, s.price_on_bill
            FROM products p JOIN services s ON s.id = p.service_id JOIN categories c ON c.id = s.category_id
           WHERE p.is_active AND s.is_active AND c.is_active AND fn_service_visible($2, s.id)
             AND ($2::int IS NULL OR fn_product_visible($2, p.id)) AND (p.name ILIKE ANY($1) OR p.brand ILIKE ANY($1))
-          ORDER BY (p.name ILIKE ANY($1)) DESC, p.name LIMIT 20`, [likes, cityOf(req)]),
+          GROUP BY coalesce(p.pack_group, p.id), s.slug, s.name, s.price_on_bill
+          ORDER BY bool_or(p.name ILIKE ANY($1)) DESC, min(p.name) LIMIT 20`, [likes, cityOf(req)]),
     ]);
     res.json({ services: services.rows, products: products.rows });
   } catch (err) {
@@ -371,11 +392,13 @@ router.get('/services/:slug', async (req, res, next) => {
     const sourceIds = s.source_service_ids || [];
     const products = await query(
       `SELECT p.id, p.slug, p.name, p.brand, p.description, p.icon, p.image_url, p.image_credit, p.unit, p.price, p.mrp, fn_product_in_stock($2, p.id) AS in_stock,
-              p.sell_by, p.note_options, p.section, p.service_id AS source_service_id
+              p.sell_by, p.note_options, p.section, p.service_id AS source_service_id,
+              p.pack_group, fn_pack_qty(p.unit) AS pack_qty -- 📦 sizes of one product share pack_group (one card)
          FROM products p JOIN services ps ON ps.id = p.service_id
         WHERE p.service_id = ANY ($1::int[]) AND p.is_active AND ps.is_active
           AND ($2::int IS NULL OR fn_product_visible($2, p.id)) AND ($2::int IS NOT NULL OR NOT p.only_assigned)
-        ORDER BY array_position($1::int[], p.service_id), fn_product_in_stock($2, p.id) DESC, p.sort_order, p.id`,
+        ORDER BY array_position($1::int[], p.service_id), fn_product_in_stock($2, p.id) DESC, p.sort_order,
+                 coalesce(p.pack_group, p.id), fn_pack_qty(p.unit), p.id`,
       [[...sourceIds, s.id], cityOf(req)]
     );
     let sources = [];

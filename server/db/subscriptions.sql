@@ -71,6 +71,7 @@ $$;
 
 -- An agent may take an order unless it has a "subscription only" service they are not subscribed to.
 -- Checked live, so switching a service's subscription off (or a subscription ending) takes effect at once.
+-- (car_rental.sql replaces this with the same rules + the car rule for Car Rental bookings — change both together)
 CREATE OR REPLACE FUNCTION fn_agent_may_take(p_agent_id INT, p_order_id INT) RETURNS BOOLEAN
 LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
   SELECT (SELECT a.franchise_id FROM agents a WHERE a.user_id = p_agent_id)

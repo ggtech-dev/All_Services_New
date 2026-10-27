@@ -16,6 +16,7 @@ import { POOJA_PHOTOS, POOJA_SECTIONS } from './pooja-photos.js';
 import { BAKERY_PHOTOS, BAKERY_SECTIONS } from './bakery-photos.js';
 import { PET_PHOTOS, PET_SECTIONS } from './pet-photos.js';
 import { DAILY_PHOTOS } from './daily-photos.js';
+import { PACK_SIZES } from './pack-sizes.js';
 
 const refreshImages = process.argv.includes('--refresh-images');
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -62,17 +63,20 @@ try {
   await client.query(await sql('./instant.sql')); // ⚡ Instant Delivery: other shops' products, instant agents only
   await client.query(await sql('./franchise.sql')); // franchises (dealers) under the Super Admin — last: uses everything above
   await client.query(await sql('./stock.sql')); // 🚫 out of stock per city (the franchise admin's switch) — after franchise.sql
+  await client.query(await sql('./packs.sql')); // 📦 pack sizes (one card, the customer picks 100 g / 200 g…) — products + franchise_products
   await client.query(await sql('./events.sql')); // 🎉 Events bookings (date, time, venue) for event partners
   await client.query(await sql('./vehicle.sql')); // 🚗 Vehicle Rental: car bookings (pickup, drop, date, time) for car partners
   await client.query(await sql('./health.sql')); // 💊 Home Doctor Visit types (parent services), visit time: now or a date
   await client.query(await sql('./village.sql')); // 🏡 Village Needs: villages, next-day slots, village delivery charge
   await client.query(await sql('./share_ride.sql'));
+  await client.query(await sql('./car_rental.sql')); // 🚗 Car Rental by car model: photo cards, only partners with that approved car — after share_ride.sql
   await client.query(await sql('./more_services.sql')); // 👷 Daily Workers directory, 💡 Digital Services requests (HQ only) // 🚗 Share Ride: cars, seat layouts, journeys, seat bookings
   await client.query(await sql('./login.sql')); // 📱 phone-first login, agents removed by the franchise admin — after orders.sql
   await client.query(await sql('./overdue.sql')); // ⏰ overdue open orders (red badge for the admin) — last: reads every slot kind
   await client.query(await sql('./geo.sql')); // 📍 franchise centre + range: where orders go, agents' zone, area requests
   await client.query(await sql('./popular.sql')); // ⭐ "Our most popular services" on the home page (HQ list, city lists)
   await client.query(await sql('./waitlist.sql')); // 📍 "Notify me" from places we don't deliver to yet — HQ sees where people want us
+  await client.query(await sql('./demand.sql')); // 🔎 what customers ask for: searches with nothing found + items they wrote (HQ, per city)
   await client.query(await sql('./homefood.sql')); // 🍱 Home Food & Cooks: Book a Cook by the hour, Tomorrow's Meal pre-orders
   await client.query(await sql('./offers.sql')); // 📢 Offers near you: local shops' offers — shop asks, franchise checks, HQ approves
   await client.query(await sql('./transport.sql')); // 🚚 Goods Transportation: goods vehicles of the city, customers call the owner
@@ -1245,6 +1249,15 @@ try {
     console.log('🏥 Medicine Delivery, Blood Sample Collection, Physiotherapy, Elderly Care switched off.');
   }
 
+
+  // One time (2026-10-27): 🛒 Monthly Grocery Subscription switched off (user's choice, not needed). Not deleted — HQ can
+  // switch it on again in Master services; its photos stay.
+  const monthlyOffDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'monthly_grocery_off_v1'");
+  if (!monthlyOffDone.rowCount) {
+    await client.query("UPDATE services SET is_active = false WHERE slug = 'food-daily-monthly-grocery-subscription'");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('monthly_grocery_off_v1', current_date::text)");
+    console.log('🛒 Monthly Grocery Subscription switched off.');
+  }
   // One time (2026-10-25): 💇 Family & Personal Services cards get our own AI photos (public/products/personal/<name>.jpg,
   // name = service slug without "personal-") instead of licensed web photos (their credits go too). Computer / Laptop
   // Repair waits for a new file (the one sent was incomplete).
@@ -1323,6 +1336,71 @@ try {
         WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE name = 'Car Rental slide')`);
     await client.query("INSERT INTO site_settings (key, value) VALUES ('car_rental_photo_v1', current_date::text)");
     console.log('🚗 Car Rental: our AI photo + Home slide.');
+  }
+
+  // One time (2026-10-26): 📷 the last photos — Electrician + Laptop Repair cards, the five special services (their
+  // service photo and their Home slide), the Shop For Me slide, and the two Pooja items without a photo.
+  const lastPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'last_photos_v1'");
+  if (!lastPhotosDone.rowCount) {
+    const svc = [['home-services-electrician-on-demand', '/products/home-services/electrician-on-demand.jpg'],
+      ['personal-computer-laptop-repair', '/products/personal/computer-laptop-repair.jpg'],
+      ['home-food-book-a-cook', '/products/special/book-your-cook.jpg'], ['home-food-tomorrows-meal', '/products/special/order-food-tomorrow.jpg'],
+      ['village-needs-village-needs', '/products/special/village-needs.jpg'], ['daily-workers-daily-workers', '/products/special/daily-workers.jpg'],
+      ['share-ride-share-ride', '/products/special/share-ride.jpg']];
+    for (const [slug, img] of svc) {
+      await client.query('UPDATE services SET image_url = $2, image_credit = NULL WHERE slug = $1 AND (image_url IS NULL OR image_url ~ \'^https?://\')', [slug, img]);
+    }
+    const slides = [['Book Your Cook slide', 'book-your-cook'], ['Food for Tomorrow slide', 'order-food-tomorrow'], ['Village Needs slide', 'village-needs'],
+      ['Daily Workers slide', 'daily-workers'], ['Share Ride slide', 'share-ride']];
+    for (const [name, file] of slides) {
+      await client.query('UPDATE promotions SET image_url = $2 WHERE name = $1 AND image_url IS NULL', [name, `/products/special/${file}.jpg`]);
+    }
+    await client.query("UPDATE promotions SET image_url = '/products/shop-for-me/anything-else-small-items.jpg' WHERE name = 'Shop For Me slide' AND image_url IS NULL");
+    await client.query(`UPDATE products p SET image_url = x.img, image_credit = NULL
+                          FROM services s, (VALUES ('Bananas for Pooja', '/products/pooja/bananas-for-pooja.jpg'),
+                                                   ('Pooja Thread (Kankanam)', '/products/pooja/pooja-thread-kankanam.jpg')) AS x(name, img)
+                         WHERE s.id = p.service_id AND s.slug = 'food-daily-pooja-store' AND p.name = x.name AND p.image_url IS NULL`);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('last_photos_v1', current_date::text)");
+    console.log('📷 Last photos: Electrician, Laptop Repair, 5 special services + their slides, Shop For Me slide, 2 Pooja items.');
+  }
+
+  // One time (2026-10-26): 📦 Kirana items that are sold in several sizes get them (db/pack-sizes.js): the size each
+  // has stays, the missing common sizes are added (fn_add_pack_size — no price: the customer pays the shop bill).
+  const packSizesDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'pack_sizes_v1'");
+  if (!packSizesDone.rowCount) {
+    let added = 0, items = 0;
+    for (const [name, brand, sizes] of PACK_SIZES) {
+      const { rows } = await client.query(
+        `SELECT p.id, p.unit FROM products p JOIN services s ON s.id = p.service_id
+          WHERE s.slug = 'food-daily-kirana-delivery' AND p.name = $1 AND p.brand IS NOT DISTINCT FROM $2 AND p.is_active
+            AND (p.pack_group IS NULL OR p.pack_group = p.id)
+          ORDER BY p.id LIMIT 1`, [name, brand]);
+      if (!rows[0]) { console.log(`  📦 not found: ${name} (${brand || '-'})`); continue; }
+      items++;
+      for (const size of sizes) {
+        if (size.toLowerCase() === (rows[0].unit || '').toLowerCase()) continue;
+        await client.query('SELECT fn_add_pack_size($1, $2)', [rows[0].id, size]);
+        added++;
+      }
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('pack_sizes_v1', current_date::text)");
+    console.log(`📦 Pack sizes: ${items} Kirana items, ${added} sizes added.`);
+  }
+
+  // One time (2026-10-26): 🚗 our own AI photo for each car model (public/products/cars/<name>.jpg) — the customer's car
+  // cards and the "your car" card. A photo HQ set already is kept.
+  const carPhotosDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'car_model_photos_v1'");
+  if (!carPhotosDone.rowCount) {
+    const cars = [['Maruti Swift (%', 'maruti-swift'], ['Maruti Swift Dzire (%', 'maruti-swift-dzire'], ['Toyota Etios (%', 'toyota-etios'],
+      ['Hyundai Aura (%', 'hyundai-aura'], ['Honda Amaze (%', 'honda-amaze'], ['Maruti Ertiga (%', 'maruti-ertiga'], ['Kia Carens (%', 'kia-carens'],
+      ['Toyota Innova (%', 'toyota-innova'], ['Toyota Innova Crysta%', 'toyota-innova-crysta'], ['Mahindra Xylo (%', 'mahindra-xylo'],
+      ['Mahindra Marazzo (%', 'mahindra-marazzo'], ['Force Tempo Traveller (%', 'force-tempo-traveller']];
+    let n = 0;
+    for (const [like, file] of cars) {
+      n += (await client.query('UPDATE car_models SET image_url = $2 WHERE name LIKE $1 AND image_url IS NULL', [like, `/products/cars/${file}.jpg`])).rowCount;
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('car_model_photos_v1', current_date::text)");
+    console.log(`🚗 Car models: ${n} with our AI photos.`);
   }
 
   // One time (2026-10-22): ⚡ Instant Delivery promise 15 → 10 minutes (shown on the home card, the top bar and

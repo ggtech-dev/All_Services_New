@@ -62,7 +62,7 @@ export default function Products() {
       </div>
 
       {list.error && <div className="alert">{list.error}</div>}
-      <ProductsTable rows={rows} total={list.data?.length} loading={list.loading && !list.data} reload={list.reload} onEdit={setEditing} />
+      <ProductsTable rows={rows} all={list.data} total={list.data?.length} loading={list.loading && !list.data} reload={list.reload} onEdit={setEditing} />
 
       {editing && (
         <ProductForm
@@ -81,8 +81,11 @@ export default function Products() {
   );
 }
 
-export function ProductsTable({ rows, total, loading, reload, onEdit }) {
+export function ProductsTable({ rows, all = rows, total, loading, reload, onEdit }) {
   const toast = useToast();
+  const [sizesOf, setSizesOf] = useState(null); // 📦 the product whose pack sizes are open
+  // every size of a product (they share pack_group), small → big as the app sorts them
+  const sizes = (p) => (p.pack_group ? (all || []).filter((x) => x.pack_group === p.pack_group || x.id === p.pack_group) : [p]);
 
   const setPrice = async (p, field, value) => {
     await api(`/admin/products/${p.id}/price`, { method: 'PATCH', body: { field, value } });
@@ -159,6 +162,9 @@ export function ProductsTable({ rows, total, loading, reload, onEdit }) {
                 <td><Switch checked={p.is_active} onChange={(v) => setFlag(p, 'is_active', v)} /></td>
                 <td className="nowrap actions">
                   <button className="btn btn-ghost btn-sm" onClick={() => onEdit(p)}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setSizesOf(p)} title="Pack sizes customers can choose">
+                    📦 {sizes(p).length > 1 ? `${sizes(p).length} sizes` : 'Sizes'}
+                  </button>
                   <button className="icon-btn danger" onClick={() => remove(p)} title="Delete">🗑️</button>
                 </td>
               </tr>
@@ -169,7 +175,53 @@ export function ProductsTable({ rows, total, loading, reload, onEdit }) {
         {!loading && !rows.length && <p className="empty">No products here yet. Use “Add product” to create one.</p>}
       </div>
       {total != null && <div className="table-foot muted">Showing {rows.length} of {total} products</div>}
+      {sizesOf && <PackSizes product={sizesOf} sizes={sizes(sizesOf)} onClose={() => setSizesOf(null)} onChanged={reload} setFlag={setFlag} />}
     </section>
+  );
+}
+
+// 📦 Pack sizes of one product (one card for customers, who pick the size). Each size has its own stock and Live
+// switch; a new size copies the name, photo and section — no price (customers pay the shop bill).
+function PackSizes({ product, sizes, onClose, onChanged, setFlag }) {
+  const toast = useToast();
+  const [unit, setUnit] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const row = await api(`/admin/products/${product.id}/pack-sizes`, { method: 'POST', body: { unit } });
+      toast(`${product.name}: ${row.unit} added`);
+      setUnit('');
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={`📦 Pack sizes — ${product.brand ? `${product.brand} ` : ''}${product.name}`} onClose={onClose}>
+      <p className="muted small">Customers see one card and tap the size they want. The partner buys that size and the customer pays the shop bill — no prices here.</p>
+      <ul className="pack-size-list">
+        {[...sizes].sort((a, b) => Number(a.pack_qty ?? 0) - Number(b.pack_qty ?? 0)).map((s) => ( /* pack_qty: fn_pack_qty in SQL */
+          <li key={s.id} className={s.is_active ? '' : 'row-muted'}>
+            <b>{s.unit || '—'}</b>
+            <Switch checked={s.is_active} onChange={(v) => setFlag(s, 'is_active', v)} label={s.is_active ? 'Live' : 'Hidden'} />
+          </li>
+        ))}
+      </ul>
+      <form className="form pack-size-add" onSubmit={add}>
+        <label>
+          Add a size
+          <input value={unit} onChange={(e) => setUnit(e.target.value.slice(0, 30))} placeholder="e.g. 250 g, 2 L, 4 × 100 g" required />
+        </label>
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Adding…' : '➕ Add size'}</button>
+      </form>
+      {error && <div className="alert">{error}</div>}
+    </Modal>
   );
 }
 

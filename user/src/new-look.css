@@ -84,7 +84,9 @@
 
 /* welcome screen (first visit) */
 .welcome { position: relative; min-height: 100vh; min-height: 100dvh; display: grid; grid-template-rows: 1fr auto; color: #fff; background: #0b0820; overflow: hidden; }
-.welcome-photo { position: absolute; inset: 0; background: url('/welcome-siddipet.jpg') center / cover no-repeat; }
+/* our own AI photo of the Komati Cheruvu bridge at night: tall on phones, wide on laptops / landscape screens */
+.welcome-photo { position: absolute; inset: 0; background: url('/welcome-bridge-tall.jpg') center / cover no-repeat; }
+@media (min-aspect-ratio: 4 / 5) { .welcome-photo { background-image: url('/welcome-bridge-wide.jpg'); } }
 .welcome-photo::after { content: ""; position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(30, 27, 75, .55) 0%, rgba(30, 27, 75, .15) 40%, rgba(11, 8, 32, .85) 100%); }
 .welcome-top { position: relative; display: grid; justify-items: center; align-content: start; text-align: center; gap: 12px; padding: 64px 24px 24px; }
@@ -816,3 +818,43 @@ body:has(.cart-bar) .help-fab, body:has(.ride-book-bar) .help-fab { display: non
 .vehicle-actions .btn { justify-content: center; }
 .vehicle-actions .wa { color: #15803d; border-color: #86efac; }
 .vehicle-report { align-self: flex-start; }
+
+/* 📦 pack sizes on a product card: tap a size (100 g · 200 g…); a dot = that size is in the cart */
+.pack-sizes { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; margin: 2px 0 4px; }
+.pack-sizes button { position: relative; border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 8px; padding: 3px 7px;
+  font: inherit; font-size: 12px; font-weight: 600; line-height: 1.3; cursor: pointer; white-space: nowrap; }
+.pack-sizes button.active { border-color: var(--accent, var(--primary)); background: color-mix(in srgb, var(--accent, var(--primary)) 10%, #fff);
+  color: var(--accent, var(--primary)); box-shadow: inset 0 0 0 1px var(--accent, var(--primary)); }
+.pack-sizes button.sold { color: var(--muted); text-decoration: line-through; }
+.pack-in-cart { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; border: 1.5px solid #fff; }
+
+/* 🚗 car rental: choose the exact car (photo cards) */
+.car-pick { display: grid; gap: 8px; }
+.car-pick-title { font-weight: 600; font-size: 14px; }
+.car-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.car-card { display: grid; justify-items: center; gap: 2px; padding: 8px 6px 10px; border: 1.5px solid var(--border); border-radius: 12px; background: #fff;
+  font: inherit; color: var(--text); cursor: pointer; text-align: center; }
+.car-card-img { width: 100%; aspect-ratio: 3 / 2; border-radius: 8px; overflow: hidden; display: grid; place-items: center; background: #f1f5f9; font-size: 28px; }
+.car-card-img img { width: 100%; height: 100%; object-fit: cover; }
+.car-card b { font-size: 13px; line-height: 1.25; }
+.car-card small { font-size: 11.5px; color: var(--muted); }
+.car-card.active { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent); background: color-mix(in srgb, var(--primary) 5%, #fff); }
+/* the car coming (after a partner accepts) */
+.trip-car { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center; }
+.trip-car-img { aspect-ratio: 3 / 2; border-radius: 10px; overflow: hidden; background: #f1f5f9; display: grid; place-items: center; font-size: 30px; }
+.trip-car-img img { width: 100%; height: 100%; object-fit: cover; }
+.trip-car .plate { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; background: #fef9c3; border: 1px solid #fde047; color: #713f12; font-weight: 800; letter-spacing: .5px; font-size: 13px; }
+
+/* 🚗 Vehicle Rental page: the cars themselves (tap → booking with that car chosen) */
+.rental-car { text-decoration: none; color: inherit; }
+.rental-car .service-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rental-any { display: grid; place-items: center; height: 100%; font-size: 42px; background: linear-gradient(135deg, #ecfeff, #e0f2fe); }
+@media (max-width: 600px) {
+  /* phones: two cars per row (13 cars in a few swipes, not 13 screens) */
+  .service-grid.rental-cars { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .rental-cars .service-body { padding: 10px; gap: 6px; }
+  .rental-cars .service-body h3 { font-size: 14.5px; line-height: 1.25; }
+  .rental-cars .service-meta { flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; }
+  .rental-cars .btn { font-size: 13px; padding: 8px 6px; }
+  .rental-any { font-size: 30px; }
+}

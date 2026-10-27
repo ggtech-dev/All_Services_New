@@ -44,6 +44,7 @@ const SuperUsers = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ de
 const Payments = lazy(() => import('./super/SuperPages.jsx').then((m) => ({ default: m.Payments })));
 const ReportCenter = lazy(() => import('./super/ReportCenter.jsx')); // 📈 all reports: choose a city, then a report
 const Waitlist = lazy(() => import('./super/Waitlist.jsx')); // 📍 where people want us ("Notify me" from places we don't serve yet)
+const Demand = lazy(() => import('./super/Demand.jsx')); // 🔎 what customers ask for, per city (searches with nothing found, items they wrote)
 
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
 
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="digital" element={<DigitalAdmin />} />
           <Route path="waitlist" element={<Waitlist />} />
+          <Route path="demand" element={<Demand />} />
           <Route path="food-prices" element={<FoodPrices />} />
           <Route path="catalog-dashboard" element={<Dashboard />} />
           {operationsRoutes}

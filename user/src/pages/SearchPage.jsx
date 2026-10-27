@@ -39,6 +39,12 @@ export default function SearchPage() {
     if (q.trim().length >= 2) navigate(`/search?q=${encodeURIComponent(q.trim())}`, { replace: true });
   };
   const none = res && !res.services.length && !res.products.length;
+  // 🔎 nothing found (and the customer saw it): HQ learns what this city asks for — only the words are sent
+  useEffect(() => {
+    if (!none || term.trim().length < 3) return undefined;
+    const t = setTimeout(() => api('/search/miss', { method: 'POST', body: { q: term } }).catch(() => {}), 1500);
+    return () => clearTimeout(t);
+  }, [none, term]);
 
   return (
     <div className="search-page">

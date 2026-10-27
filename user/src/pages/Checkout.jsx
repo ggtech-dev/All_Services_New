@@ -92,10 +92,17 @@ export default function Checkout() {
   // no price from us (booked ahead, or a "price on discussion" service like plumber / electrician) — the cook has one
   const talk = (ahead && !isCook) || (kind === 'service' && priceTalk(service));
   const [tripOpts, setTripOpts] = useState(null);
-  const [trip, setTrip] = useState({ trip_type: '', drop: '', trip_date: '', trip_time: '09:00', return_date: '', passengers: '', car_type: 'Any car', details: '' });
+  // 🚗 car_model_id: the car the customer chose on the photo cards ('' = Any car) — only partners with that car get it
+  const [trip, setTrip] = useState({ trip_type: '', drop: '', trip_date: '', trip_time: '09:00', return_date: '', passengers: '', car_type: 'Any car', car_model_id: '', details: '' });
   useEffect(() => {
     if (isTrip && !tripOpts) api('/trip-options').then(setTripOpts).catch(() => {});
   }, [isTrip, tripOpts]);
+  // 🚗 the car tapped on the Vehicle Rental page (?car=5) comes chosen
+  const pickedCar = params.get('car');
+  useEffect(() => {
+    const c = tripOpts?.cars?.find((x) => String(x.id) === pickedCar);
+    if (c) setTrip((t) => (t.car_model_id ? t : { ...t, car_model_id: String(c.id), car_type: c.name }));
+  }, [tripOpts, pickedCar]);
   const setTr = (k) => (e) => setTrip({ ...trip, [k]: e.target.value });
   // "Book again" after a partner cancelled: the form starts with that booking's details; placing cancels the old one
   const prefilled = useRef(false); // fill the form once, so a late reply never overwrites what the customer typed
@@ -166,7 +173,8 @@ export default function Checkout() {
         if (v) setVisit({ mode: v.mode, visit_date: v.visit_date || '', visit_time: v.visit_time || '10:00' });
         const t = o.trip_details;
         if (t) setTrip({ trip_type: t.trip_type, drop: t.drop, trip_date: t.trip_date, trip_time: t.trip_time, return_date: t.return_date || '',
-          passengers: t.passengers ? String(t.passengers) : '', car_type: t.car_type, details: t.details || '' });
+          passengers: t.passengers ? String(t.passengers) : '', car_type: t.car_model_id ? t.car_type : 'Any car',
+          car_model_id: t.car_model_id ? String(t.car_model_id) : '', details: t.details || '' });
       }).catch(() => {});
       return;
     }
@@ -411,12 +419,23 @@ export default function Checkout() {
             {trip.trip_type === 'Round trip' && (
               <label>Return date (optional)<input type="date" min={trip.trip_date || today} value={trip.return_date} onChange={setTr('return_date')} /></label>
             )}
+            {/* 🚗 choose the exact car: only partners with that car (approved) get the booking */}
+            <div className="car-pick">
+              <span className="car-pick-title">Choose your car</span>
+              <div className="car-cards" role="radiogroup" aria-label="Car">
+                {[{ id: '', name: 'Any car', seats: null }, ...(tripOpts?.cars || [])].map((c) => (
+                  <button key={c.id || 'any'} type="button" role="radio" aria-checked={String(trip.car_model_id) === String(c.id)}
+                    className={`car-card ${String(trip.car_model_id) === String(c.id) ? 'active' : ''}`}
+                    onClick={() => setTrip({ ...trip, car_model_id: String(c.id), car_type: c.name })}>
+                    <span className="car-card-img">{c.image_url ? <img src={c.image_url} alt="" loading="lazy" /> : <span aria-hidden="true">{c.id ? '🚗' : '✨'}</span>}</span>
+                    <b>{c.name}</b>
+                    <small>{c.seats ? `${c.seats} seats` : 'quickest reply'}</small>
+                  </button>
+                ))}
+              </div>
+              <small className="muted">{trip.car_model_id ? `Only partners with a ${trip.car_type} get your booking. The first to accept calls you.` : 'Every car partner gets your booking. The first to accept calls you.'}</small>
+            </div>
             <div className="form-row">
-              <label>Car type
-                <select value={trip.car_type} onChange={setTr('car_type')}>
-                  {(tripOpts?.car_types || ['Any car']).map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </label>
               <label>Passengers<input type="number" min="1" max="20" inputMode="numeric" value={trip.passengers} onChange={setTr('passengers')} placeholder="e.g. 4" /></label>
             </div>
             <label>Anything else? (optional)<textarea rows={2} maxLength={400} value={trip.details} onChange={setTr('details')}
@@ -569,7 +588,7 @@ export default function Checkout() {
             {isVisit && visit.mode === 'now' && <div><span>⚡ When</span><span>Now</span></div>}
             {isVisit && visit.mode === 'schedule' && visit.visit_date && <div><span>📅 When</span><span>{visit.visit_date} · {visit.visit_time}</span></div>}
             <div className="grand"><span>Price</span><span>agreed with the partner</span></div>
-            <PartnerNote compact />
+            <PartnerNote compact kind={isTrip ? 'car' : 'service'} />
           </div>
         ) : <div className="totals">
           {(subtotal > 0 || !hasBill) && <div><span>{isCook ? `Cook · ${hoursLabel(cook.hours)}` : kind === 'service' ? 'Service charge' : 'Items total'}</span><span>{rupees(subtotal)}</span></div>}

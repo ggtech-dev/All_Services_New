@@ -1068,6 +1068,28 @@ export const DICT = {
   "Car Rental with driver": ["డ్రైవర్‌తో కారు అద్దెకు","ड्राइवर के साथ कार किराये पर"],
   "Innova, Ertiga, Dzire & more — family trips, functions and airport drops": ["ఇన్నోవా, ఎర్టిగా, డిజైర్ & మరిన్ని — ఫ్యామిలీ ట్రిప్‌లు, ఫంక్షన్లు, ఎయిర్‌పోర్ట్ డ్రాప్‌లు","इनोवा, अर्टिगा, डिज़ायर और भी — फैमिली ट्रिप, फंक्शन और एयरपोर्ट ड्रॉप"],
   "Book a car": ["కారు బుక్ చేయండి","कार बुक करें"],
+  "We connect you with local car owners.": ["మేము మిమ్మల్ని స్థానిక కార్ యజమానులతో కలుపుతాము.","हम आपको स्थानीय कार मालिकों से जोड़ते हैं।"],
+  "Price, timing and conditions are agreed directly with them.": ["ధర, సమయం, షరతులు వారితో నేరుగా ఒప్పుకోవాలి.","कीमत, समय और शर्तें सीधे उनसे तय होती हैं।"],
+  "The car photos are examples of each model — the owner's own car may differ in colour or year.": ["కార్ ఫోటోలు ప్రతి మోడల్‌కు ఉదాహరణలు మాత్రమే — యజమాని కారు రంగు లేదా సంవత్సరం వేరుగా ఉండవచ్చు.","कार की फ़ोटो हर मॉडल का उदाहरण हैं — मालिक की अपनी कार का रंग या साल अलग हो सकता है।"],
+  "After a car owner accepts your booking, you see their car's number and their phone number. Talk to them directly, agree the price, timing and all conditions, and pay them directly.": ["కార్ యజమాని మీ బుకింగ్ అంగీకరించిన తర్వాత, వారి కారు నంబర్, ఫోన్ నంబర్ మీకు కనిపిస్తాయి. వారితో నేరుగా మాట్లాడి, ధర, సమయం, అన్ని షరతులు ఒప్పుకుని, వారికే నేరుగా చెల్లించండి.","कार मालिक के आपकी बुकिंग स्वीकार करने के बाद, आपको उनकी कार का नंबर और फ़ोन नंबर दिखेगा। उनसे सीधे बात करें, कीमत, समय और सभी शर्तें तय करें, और सीधे उन्हें भुगतान करें।"],
+  "All Services (GG Tech Software Solutions) only connects you with the car owner. We do not set, collect or guarantee the price, and are not responsible for the trip, the car or the agreement between you.": ["All Services (GG Tech Software Solutions) మిమ్మల్ని కార్ యజమానితో కలుపుతుంది మాత్రమే. మేము ధరను నిర్ణయించము, వసూలు చేయము లేదా హామీ ఇవ్వము; ప్రయాణం, కారు లేదా మీ మధ్య ఒప్పందానికి మేము బాధ్యులం కాము.","All Services (GG Tech Software Solutions) सिर्फ़ आपको कार मालिक से जोड़ता है। हम कीमत तय, वसूल या गारंटी नहीं करते, और यात्रा, कार या आपके बीच के समझौते के लिए ज़िम्मेदार नहीं हैं।"],
+  "Car photos are examples of each model": ["కార్ ఫోటోలు ప్రతి మోడల్‌కు ఉదాహరణలు మాత్రమే","कार की फ़ोटो हर मॉडल का उदाहरण हैं"],
+  "— the owner's own car may differ in colour or year. After a car owner accepts, you see their car's number and talk to them directly: price, timing and all conditions are agreed between you.": ["— యజమాని కారు రంగు లేదా సంవత్సరం వేరుగా ఉండవచ్చు. కార్ యజమాని అంగీకరించిన తర్వాత, వారి కారు నంబర్ మీకు కనిపిస్తుంది, మీరు నేరుగా మాట్లాడండి: ధర, సమయం, అన్ని షరతులు మీ ఇద్దరి మధ్యే ఒప్పుకుంటారు.","— मालिक की अपनी कार का रंग या साल अलग हो सकता है। कार मालिक के स्वीकार करने के बाद, आपको उनकी कार का नंबर दिखेगा और आप सीधे बात करें: कीमत, समय और सभी शर्तें आप दोनों के बीच तय होती हैं।"],
+  "We only connect you with each other.": ["మేము మిమ్మల్ని ఒకరితో ఒకరిని కలుపుతాము మాత్రమే.","हम सिर्फ़ आपको एक-दूसरे से जोड़ते हैं।"],
+  "Choose your car": ["మీ కారును ఎంచుకోండి","अपनी कार चुनें"],
+  "with driver": ["డ్రైవర్‌తో","ड्राइवर के साथ"],
+  "Book this car →": ["ఈ కారు బుక్ చేయండి →","यह कार बुक करें →"],
+  "Book any car →": ["ఏ కారైనా బుక్ చేయండి →","कोई भी कार बुक करें →"],
+  "price: talk to the driver": ["ధర: డ్రైవర్‌తో మాట్లాడండి","कीमत: ड्राइवर से बात करें"],
+  "See tomorrow's menu": ["రేపటి మెనూ చూడండి","कल का मेन्यू देखें"],
+  "Book a cook": ["వంటమనిషిని బుక్ చేయండి","कुक बुक करें"],
+  "My Share Ride tickets": ["నా షేర్ రైడ్ టికెట్లు","मेरे शेयर राइड टिकट"],
+  "Choose your car": ["మీ కారును ఎంచుకోండి","अपनी कार चुनें"],
+  "Any car": ["ఏ కారైనా","कोई भी कार"],
+  "quickest reply": ["త్వరగా జవాబు","सबसे जल्दी जवाब"],
+  "Every car partner gets your booking. The first to accept calls you.": ["మీ బుకింగ్ ప్రతి కార్ పార్ట్‌నర్‌కు వెళ్తుంది. ముందుగా అంగీకరించినవారు మీకు కాల్ చేస్తారు.","आपकी बुकिंग हर कार पार्टनर को जाती है। पहले स्वीकार करने वाला आपको कॉल करेगा।"],
+  "You log in with this number and your password.": ["మీరు ఈ నంబర్ మరియు మీ పాస్‌వర్డ్‌తో లాగిన్ అవుతారు.","आप इस नंबर और अपने पासवर्ड से लॉग इन करते हैं।"],
+  "Your car": ["మీ కారు","आपकी कार"],
   "Book a seat in a shared car — pick your seat, pay the car owner by UPI": ["షేర్ కారులో సీటు బుక్ చేయండి — మీ సీటు ఎంచుకోండి, కారు యజమానికి UPI ద్వారా చెల్లించండి","शेयर कार में सीट बुक करें — अपनी सीट चुनें, कार मालिक को UPI से भुगतान करें"],
   "Find a ride": ["రైడ్ వెతకండి","राइड खोजें"],
   "Village Needs — delivered to your village": ["గ్రామ అవసరాలు — మీ గ్రామానికే డెలివరీ","गाँव की ज़रूरतें — आपके गाँव तक डिलीवरी"],
@@ -1583,6 +1605,9 @@ const UNIT = {
 const TIME = { min: ['నిమి', 'मिनट'], hr: ['గం', 'घंटा'], day: ['రోజు', 'दिन'] };
 
 export const PATTERNS = [
+  // 🚗 car rental cards: "6 seats", "Only partners with a Maruti Ertiga get your booking. …"
+  [/^(\d+) seats$/, [(m) => `${m[1]} సీట్లు`, (m) => `${m[1]} सीटें`]],
+  [/^Only partners with a (.+) get your booking\. The first to accept calls you\.$/, [(m) => `${m[1]} ఉన్న పార్ట్‌నర్‌లకు మాత్రమే మీ బుకింగ్ వెళ్తుంది. ముందుగా అంగీకరించినవారు మీకు కాల్ చేస్తారు.`, (m) => `आपकी बुकिंग सिर्फ़ ${m[1]} वाले पार्टनर को जाती है। पहले स्वीकार करने वाला आपको कॉल करेगा।`]],
   // service cards: how soon the partner / delivery comes
   [/^Arrives in ~(\d+) (min|hr)$/, [(m) => `సుమారు ${m[1]} ${TIME[m[2]][0]}లో వస్తారు`, (m) => `लगभग ${m[1]} ${TIME[m[2]][1]} में पहुँचेंगे`]],
   [/^Within (\d+) day$/, [(m) => `${m[1]} ${TIME.day[0]}లో`, (m) => `${m[1]} ${TIME.day[1]} में`]],

@@ -98,10 +98,12 @@ applyRouter.post('/apply', applyUpload, h(async (req, res) => {
     return res.status(400).json({ error: 'Please verify your mobile number with OTP first (step 1). It may have expired — verify again.' });
   }
   req.body.phone = phone;
-  // 🚗 Share Ride car owner: only that type of work, and the car (with its papers) is checked before the account exists
+  // 🚗 Car owner: 🚗 Share Ride (sell seats between towns) and/or 🚙 Car Rental (trips with driver) — only those types of
+  // work, and the car (with its papers) is checked before the account exists
   const carOwner = req.body.owner_type === 'car';
   if (carOwner) {
     const b = req.body;
+    const carWork = [b.skills].flat().filter((s) => s === 'shared_car_agent' || s === 'car_rental_agent');
     const file = (k) => req.files?.[k]?.[0];
     const reg = String(b.reg_number || '').toUpperCase().replace(/[\s-]/g, '');
     const problem = !/^\d{1,9}$/.test(String(b.car_model_id || '')) ? 'Choose your car model'
@@ -114,7 +116,7 @@ applyRouter.post('/apply', applyUpload, h(async (req, res) => {
       await removeFiles(req.files);
       return res.status(400).json({ error: problem });
     }
-    req.body.skills = ['shared_car_agent'];
+    req.body.skills = carWork.length ? [...new Set(carWork)] : ['shared_car_agent'];
     req.body.vehicle_type = 'car';
     req.body.vehicle_number = reg;
   }

@@ -32,7 +32,7 @@ export default function AccountSecurity() {
     <div className="account-grid">
       <section className="panel">
         <h3>📱 Mobile number</h3>
-        <p className="muted small">You log in with this number and an OTP by SMS.</p>
+        <p className="muted small">{user.hasPassword ? 'You log in with this number and your password.' : 'You log in with this number and an OTP by SMS.'}</p>
         <div className="email-row">
           <b>{user.phone ? `+91 ${user.phone}` : 'Not added'}</b>
         </div>

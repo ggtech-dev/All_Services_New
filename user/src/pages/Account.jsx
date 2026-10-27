@@ -30,7 +30,6 @@ export default function Account() {
       <ShareApp />
       <SupportLinks className="panel center-links" />
       <button type="button" className="btn btn-ghost btn-block logout-btn" onClick={logout}><LogOut size={18} /> Log out</button>
-      <p className="muted small center"><Link to="/credits" className="link">📷 Photo credits</Link></p>
     </div>
   );
 }

@@ -34,6 +34,8 @@ export default function AgentLayout() {
   // 🚗 Share Ride car owners get a Share Ride tab; owners who only do Share Ride start there (no delivery orders)
   const isCar = (me.agent.skills || []).includes('shared_car_agent');
   const onlyCar = isCar && me.agent.skills.length === 1;
+  // 🚙 Car Rental partners: "My cars" (bookings come for the models of their approved cars) instead of Pay QR
+  const isRental = (me.agent.skills || []).includes('car_rental_agent');
   if (onlyCar && pathname === '/agent') return <Navigate to="/agent/share-ride" replace />;
 
   return (
@@ -76,7 +78,9 @@ export default function AgentLayout() {
             <>
               <NavLink to="/agent" end><span>🏠</span>Home</NavLink>
               <NavLink to="/agent/orders"><span>📦</span>My orders</NavLink>
-              {isCar ? <NavLink to="/agent/share-ride"><span>🚗</span>Share Ride</NavLink> : <NavLink to="/agent/pay-qr"><span>🔳</span>Pay QR</NavLink>}
+              {isCar ? <NavLink to="/agent/share-ride"><span>🚗</span>Share Ride</NavLink>
+                : isRental ? <NavLink to="/agent/my-cars"><span>🚗</span>My cars</NavLink>
+                : <NavLink to="/agent/pay-qr"><span>🔳</span>Pay QR</NavLink>}
               <NavLink to="/agent/wallet"><span>💰</span>Wallet</NavLink>
               <NavLink to="/agent/profile"><span>👤</span>Profile</NavLink>
             </>

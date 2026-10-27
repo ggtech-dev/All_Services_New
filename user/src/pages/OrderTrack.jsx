@@ -14,6 +14,7 @@ import { ReportProblem } from '../components/CustomerComplaints.jsx';
 import EventInfo from '../components/EventInfo.jsx';
 import { useAskReason } from '../components/AskReason.jsx';
 import TripInfo from '../components/TripInfo.jsx';
+import TripCar from '../components/TripCar.jsx';
 import VisitInfo from '../components/VisitInfo.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 
@@ -141,6 +142,7 @@ export default function OrderTrack() {
       )}
       <EventInfo event={order.event_details} />
       <TripInfo trip={order.trip_details} />
+      <TripCar order={order} onChanged={setOrder} />
       <VisitInfo visit={order.visit_details} type={order.service_name} notes={order.notes} />
       <RateOrder order={order} who={who} onSaved={load} />
       {ACTIVE.includes(order.status) && <AlertsCard who="customer" compact />}

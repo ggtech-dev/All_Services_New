@@ -80,6 +80,7 @@ export function SkillPicker({ types, value, onChange }) {
 export function AgentForm({ docsRequired = true, submitLabel, onSubmit, verified = null, ownerType = 'work' }) {
   const isCar = ownerType === 'car';
   const [car, setCar] = useState({ car_model_id: '', reg_number: '', car_color: '', yellow_board: false });
+  const [carWork, setCarWork] = useState(['car_rental_agent']); // 🚗 car owners: Car Rental and/or Share Ride
   const [localities, setLocalities] = useState([]);
   const [types, setTypes] = useState([]);
   const [skills, setSkills] = useState(['delivery']);
@@ -106,9 +107,10 @@ export function AgentForm({ docsRequired = true, submitLabel, onSubmit, verified
     e.preventDefault();
     setError('');
     if (!isCar && !skills.length) return setError('Choose at least one type of work');
+    if (isCar && !carWork.length) return setError('Choose what you will do with your car: Car Rental, Share Ride or both');
     if (isCar && !car.yellow_board) return setError('Only commercial (yellow number plate) cars can carry paying passengers');
     const fd = new FormData();
-    (isCar ? ['shared_car_agent'] : skills).forEach((s) => fd.append('skills', s));
+    (isCar ? carWork : skills).forEach((s) => fd.append('skills', s));
     if (isCar) {
       fd.append('owner_type', 'car');
       Object.entries(car).forEach(([k, v]) => fd.append(k, String(v)));
@@ -151,7 +153,20 @@ export function AgentForm({ docsRequired = true, submitLabel, onSubmit, verified
         </div>
       </fieldset>
 
-      {isCar ? <CarFields car={car} setCar={setCar} files={files} setFiles={setFiles} legend="2. Your car (commercial / yellow board)" /> : <>
+      {isCar ? <>
+      <fieldset>
+        <legend>2. What will you do with your car? *</legend>
+        {[['car_rental_agent', '🚙 Car Rental', 'Trips with driver — customers who choose your car model book it; you call them and agree the price'],
+          ['shared_car_agent', '🚗 Share Ride', 'You go between towns and sell seats in your car']].map(([code, label, hint]) => (
+          <label key={code} className="check-line">
+            <input type="checkbox" checked={carWork.includes(code)}
+              onChange={(e) => setCarWork(e.target.checked ? [...carWork, code] : carWork.filter((c) => c !== code))} />
+            <span><b>{label}</b><br /><small className="muted">{hint}</small></span>
+          </label>
+        ))}
+      </fieldset>
+      <CarFields car={car} setCar={setCar} files={files} setFiles={setFiles} legend="3. Your car (commercial / yellow board)" />
+      </> : <>
       <fieldset>
         <legend>2. What work will you do? *</legend>
         <small className="muted">You will only get orders for the types you choose. Pick all that apply.</small>
@@ -173,7 +188,7 @@ export function AgentForm({ docsRequired = true, submitLabel, onSubmit, verified
       </>}
 
       <fieldset>
-        <legend>{isCar ? '3. Your documents' : '4. Documents'}</legend>
+        <legend>{isCar ? '4. Your documents' : '4. Documents'}</legend>
         <div className="form-row">
           <label>Aadhaar number {docsRequired && '*'}<input value={form.aadhaar_number} onChange={set('aadhaar_number')} required={docsRequired} inputMode="numeric" placeholder="1234 5678 9012" /></label>
           <label>PAN number {docsRequired && '*'}<input value={form.pan_number} onChange={set('pan_number')} required={docsRequired} placeholder="ABCDE1234F" style={{ textTransform: 'uppercase' }} /></label>
@@ -249,7 +264,7 @@ export default function AgentApply() {
             <div className="empty-icon">✅</div>
             <h2>Application submitted!</h2>
             <p className="muted">Your city's franchise admin will check your details and documents{ownerType === 'car' ? ' and your car papers' : ''}, usually within 24–48 hours. Once approved, log in with your mobile number <b>+91 {verified?.phone}</b> and an OTP.</p>
-            {ownerType === 'car' && <p className="muted small">🚗 Share Ride needs a subscription: your franchise admin will call you about it. Your journeys are shown to customers once your car is approved and the subscription is active.</p>}
+            {ownerType === 'car' && <p className="muted small">🚗 Car Rental and Share Ride need a subscription: your franchise admin will call you about it. Once your car is approved and the subscription is active, you get bookings for your car model (Car Rental) and your journeys are shown to customers (Share Ride).</p>}
             <Link to="/login?as=agent" className="btn btn-primary">Go to agent login</Link>
           </div>
         ) : (
@@ -276,7 +291,7 @@ export default function AgentApply() {
                     <span>🛵🔧</span><b>Deliveries & services</b><small>Delivery, plumber, electrician, cleaning, events…</small>
                   </button>
                   <button type="button" onClick={() => setOwnerType('car')}>
-                    <span>🚗</span><b>Share Ride car owner</b><small>I own a commercial (yellow-board) car and go between towns — sell seats</small>
+                    <span>🚗</span><b>Car owner — Car Rental / Share Ride</b><small>I own a commercial (yellow-board) car: trips with driver, or sell seats between towns</small>
                   </button>
                 </div>
               </fieldset>

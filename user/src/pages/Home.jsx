@@ -133,7 +133,6 @@ export default function Home() {
           <Link to="/about">About us</Link>
           <Link to="/about#privacy">Privacy</Link>
           <Link to="/about#terms">Terms</Link>
-          <Link to="/credits">Photo credits</Link>
         </nav>
         <small translate="no">© {new Date().getFullYear()} All Services by GGTech</small>
       </footer>

@@ -15,6 +15,7 @@ const AgentProfile = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ 
 const AgentPayQr = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ default: m.AgentPayQr })));
 const AgentSubscriptions = lazy(() => import('./agent/AgentPages.jsx').then((m) => ({ default: m.AgentSubscriptions })));
 const ShareRideOwner = lazy(() => import('./agent/ShareRideOwner.jsx'));
+const MyCarsPage = lazy(() => import('./agent/MyCarsPage.jsx'));
 
 const Loading = () => <div className="center-screen"><div className="spinner" /></div>;
 
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="pay-qr" element={<AgentPayQr />} />
           <Route path="subscriptions" element={<AgentSubscriptions />} />
           <Route path="share-ride" element={<ShareRideOwner />} />
+          <Route path="my-cars" element={<MyCarsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/agent" replace />} />
       </Routes>

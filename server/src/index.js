@@ -13,7 +13,7 @@ import promotionRoutes from './routes/promotions.js';
 import agentRoutes, { applyRouter } from './routes/agent.js';
 import { pushRouter } from './push.js';
 import superRoutes from './routes/super.js';
-import shareRideRoutes from './routes/shareRide.js';
+import shareRideRoutes, { carsRouter } from './routes/shareRide.js';
 import offerRoutes from './routes/offers.js';
 import transportRoutes from './routes/transport.js';
 import { digital as digitalRoutes, workers as workerRoutes } from './routes/moreServices.js';
@@ -53,6 +53,7 @@ app.use('/api/me', meRoutes); // customer: complaints
 app.use('/api/workers', workerRoutes); // 👷 Daily Workers directory (+ /admin)
 app.use('/api/digital', digitalRoutes); // 💡 Digital Services requests (+ /admin: HQ only)
 app.use('/api/share-ride', shareRideRoutes); // 🚗 Share Ride: search, seats, tickets · /owner · /admin
+app.use('/api/cars', carsRouter); // 🚗 my cars: Share Ride owners and Car Rental partners (approved by the franchise admin)
 app.use('/api/offers', offerRoutes); // 📢 Offers near you: local shops' offers (shop asks · franchise checks · HQ approves)
 app.use('/api/transport', transportRoutes); // 🚚 Goods Transportation: goods vehicles, customers call the owner
 app.use('/api', catalogRoutes);

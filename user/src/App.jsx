@@ -11,7 +11,6 @@ import MyOrders from './pages/MyOrders.jsx';
 import Account from './pages/Account.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import OrderTrack from './pages/OrderTrack.jsx';
-import Credits from './pages/Credits.jsx';
 import MealPage from './pages/MealPage.jsx';
 import About from './pages/About.jsx';
 import { MyTickets, RideBooking, RideSeats, ShareRideSearch } from './pages/ShareRide.jsx';
@@ -84,7 +83,8 @@ export default function App() {
       <Route path="/orders" element={<Protected><MyOrders /></Protected>} />
       <Route path="/account" element={<Protected><Account /></Protected>} />
       <Route path="/orders/:id" element={<Protected><OrderTrack /></Protected>} />
-      <Route path="/credits" element={<Open><Credits /></Open>} />
+      {/* Photo credits page removed 2026-10-26: every photo in the app is now our own */}
+      <Route path="/credits" element={<Navigate to="/" replace />} />
       <Route path="/meal" element={<Open><MealPage /></Open>} />
       <Route path="/transport" element={<Open><Transport /></Open>} />
       <Route path="/offers" element={<Open><OffersPage /></Open>} />

@@ -267,7 +267,8 @@ admin.get('/', h(async (req, res) => {
   const [cars, rides, bookings, models, places, counts] = await Promise.all([
     query(`SELECT c.id, c.reg_number, c.color, c.status, c.status_reason, c.created_at, c.reviewed_at, c.franchise_id,
                   m.name AS model, u.id AS owner_id, u.full_name AS owner_name, u.phone AS owner_phone, a.status AS owner_status,
-                  f.city, fn_owner_blocker(u.id) AS hidden_reason,
+                  f.city, a.skills AS owner_skills, -- 🚙 Car Rental and/or 🚗 Share Ride partner
+                  CASE WHEN 'shared_car_agent' = ANY (a.skills) THEN fn_owner_blocker(u.id) END AS hidden_reason, -- Share Ride journeys
                   (c.rc_doc IS NOT NULL) AS has_rc, (c.permit_doc IS NOT NULL) AS has_permit,
                   (c.insurance_doc IS NOT NULL) AS has_insurance, (c.car_photo IS NOT NULL) AS has_photo
              FROM shared_cars c JOIN car_models m ON m.id = c.model_id JOIN users u ON u.id = c.owner_id
@@ -366,3 +367,27 @@ admin.put('/places/:id', h(async (req, res) => {
 router.use('/admin', admin);
 
 export default router;
+
+// ======================= 🚗 my cars (Share Ride owners and Car Rental partners) =======================
+// /api/cars: the partner's cars and their approval, and "add a car" (papers checked by the franchise admin). A car
+// rental partner gets only bookings for the models of their approved cars (car_rental.sql).
+export const carsRouter = Router();
+carsRouter.use(requireAuth, requireRole('agent'), h(async (req, res, next) => {
+  const { rows } = await query('SELECT status, skills FROM agents WHERE user_id = $1', [req.user.id]);
+  if (rows[0]?.status !== 'active') return res.status(403).json({ error: 'Your agent account is not active' });
+  if (!rows[0].skills.some((s) => s === 'shared_car_agent' || s === 'car_rental_agent')) {
+    return res.status(403).json({ error: 'My cars is for car partners. Ask your franchise admin to add Car Rental or Share Ride to your types of work.' });
+  }
+  next();
+}));
+carsRouter.get('/', h(async (req, res) => {
+  const { rows } = await query(
+    `SELECT c.id, c.reg_number, c.color, c.status, c.status_reason, c.created_at, m.id AS model_id, m.name AS model, m.image_url,
+            fn_model_seats(m.id) AS seats
+       FROM shared_cars c JOIN car_models m ON m.id = c.model_id WHERE c.owner_id = $1 AND c.status <> 'removed'
+      ORDER BY c.status = 'approved' DESC, c.id DESC`, [req.user.id]);
+  res.json({ cars: rows });
+}));
+carsRouter.post('/', carDocUpload, h(async (req, res) => {
+  res.status(201).json(await addCar(req.user.id, req));
+}));

@@ -19,6 +19,7 @@ export async function loadOrder(id, { customerId } = {}) {
             coalesce(sh.name, o.preferred_shop_name) AS preferred_shop, sh.phone AS preferred_shop_phone, shl.name AS preferred_shop_area,
             (fn_setting_num('require_delivery_otp', 0) = 1) AS otp_required,
             (SELECT to_jsonb(r) - 'customer_id' FROM order_ratings r WHERE r.order_id = o.id) AS rating,
+            fn_trip_car_of(o.id) AS trip_car, -- 🚗 car rental: the partner's car coming (model, number, colour, photo)
             s.name AS service_name, s.slug AS service_slug, st.name AS skill_name, st.agent_title, st.icon AS skill_icon,
             (SELECT c.icon FROM order_items i
                LEFT JOIN products p ON p.id = i.product_id
@@ -261,6 +262,13 @@ router.get('/:id', h(async (req, res) => {
   const order = await loadOrder(Number(req.params.id), { customerId: req.user.id });
   if (!order) return res.status(404).json({ error: 'Order not found' });
   res.json(order);
+}));
+
+// 🚗 Car rental: "No Ertiga free? Ask all 6–7 seater cars" — the booking also goes to every car with as many seats.
+router.post('/:id/any-car', h(async (req, res) => {
+  await query('SELECT fn_trip_any_size($1,$2)', [Number(req.params.id), req.user.id]);
+  notifyNewOrder(Number(req.params.id)); // the newly allowed partners get the alert too
+  res.json(await loadOrder(Number(req.params.id), { customerId: req.user.id }));
 }));
 
 // Customer rates the agent after delivery. body: { stars: 1-5, comment?, tags?: [] }

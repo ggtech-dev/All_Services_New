@@ -248,7 +248,8 @@ function NewJourney({ data, cars, done, toast }) {
   );
 }
 
-function MyCars({ data, reload, toast }) {
+// 🚗 the partner's cars (also on the Car Rental "My cars" page): approval status, and "add a car" for approval
+export function MyCars({ data, reload, toast }) {
   const [adding, setAdding] = useState(false);
   const [car, setCar] = useState({ car_model_id: '', reg_number: '', car_color: '', yellow_board: false });
   const [files, setFiles] = useState({});
@@ -262,7 +263,7 @@ function MyCars({ data, reload, toast }) {
     Object.entries(files).forEach(([k, v]) => v && fd.append(k, v));
     setBusy(true);
     try {
-      await api('/share-ride/owner/cars', { method: 'POST', body: fd });
+      await api('/cars', { method: 'POST', body: fd });
       toast('Car sent for approval');
       setAdding(false);
       setCar({ car_model_id: '', reg_number: '', car_color: '', yellow_board: false });
@@ -298,7 +299,7 @@ function MyCars({ data, reload, toast }) {
             <button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>Cancel</button>
           </div>
         </form>
-      ) : <button className="btn btn-ghost" onClick={() => setAdding(true)}>➕ Add another car</button>}
+      ) : <button className="btn btn-ghost" onClick={() => setAdding(true)}>{data.cars.length ? '➕ Add another car' : '➕ Add your car'}</button>}
     </>
   );
 }

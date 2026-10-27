@@ -23,6 +23,7 @@ export default function ServiceShop() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState(params.get('tab') === 'others' ? 'others' : '');
   const [section, setSection] = useState('');
+  const [picked, setPicked] = useState({}); // 📦 pack group → the size the customer chose on that card
   const cart = useCart();
 
   // the city's products and stock: loaded again when the city is known / changed (first visit, location box)
@@ -54,15 +55,22 @@ export default function ServiceShop() {
     () => [...new Set((data?.products || []).filter((p) => !sourceTab || p.source_service_id === sourceTab.id).map((p) => p.section).filter(Boolean))],
     [data, sourceTab]
   );
+  // sections, each with its cards; a card holds every pack size of one product (📦 same pack_group), small → big
   const groups = useMemo(() => {
     const shown = section ? products.filter((p) => p.section === section) : products;
     const out = [];
+    const cards = new Map();
     for (const p of shown) {
+      const key = p.pack_group || p.id;
+      if (cards.has(key)) { cards.get(key).sizes.push(p); continue; }
       const name = p.section || '';
       let g = out.find((x) => x.name === name);
       if (!g) out.push((g = { name, items: [] }));
-      g.items.push(p);
+      const c = { key, sizes: [p] };
+      cards.set(key, c);
+      g.items.push(c);
     }
+    for (const c of cards.values()) c.sizes.sort((a, b) => (a.pack_qty ?? 0) - (b.pack_qty ?? 0) || a.id - b.id);
     return out;
   }, [products, section]);
 
@@ -82,12 +90,17 @@ export default function ServiceShop() {
     setSection('');
   };
 
-  const card = (p) => {
+  const card = ({ key, sizes }) => {
+    // the size shown: the one tapped, else one already in the cart, else the product's own size if in stock, else a
+    // size that is in stock (the card is greyed out only when every size is out of stock)
+    const own = sizes.find((s) => s.id === key) || sizes[0];
+    const p = sizes.find((s) => s.id === picked[key]) || sizes.find((s) => cart.itemOf(s.id))
+      || (own.in_stock ? own : sizes.find((s) => s.in_stock)) || own;
     const onBill = shopOf(p).price_on_bill;
     const off = !onBill && p.mrp && Number(p.mrp) > Number(p.price) ? Math.round((1 - p.price / p.mrp) * 100) : 0;
     const item = cart.itemOf(p.id);
     return (
-      <article key={p.id} className={`product-card ${p.in_stock ? '' : 'sold-out'}`}>
+      <article key={key} className={`product-card ${p.in_stock ? '' : 'sold-out'}`}>
         <div className="product-img">
           <SmartImage src={p.image_url} alt={p.name} credit={p.image_credit} fallbackIcon={p.icon || service.category_icon} color={service.category_color} />
           {off > 0 && <span className="off-badge">{off}% OFF</span>}
@@ -96,7 +109,18 @@ export default function ServiceShop() {
         <div className="product-body">
           {p.brand && <span className="product-brand">{p.brand}</span>}
           <h3>{p.name}</h3>
-          <span className="product-unit">{p.unit}</span>
+          {sizes.length > 1 ? (
+            <div className="pack-sizes" role="group" aria-label={`Pack size of ${p.name}`}>
+              {sizes.map((s) => (
+                <button key={s.id} type="button" className={`${s.id === p.id ? 'active' : ''} ${s.in_stock ? '' : 'sold'}`} aria-pressed={s.id === p.id}
+                  onClick={() => setPicked({ ...picked, [key]: s.id })} title={s.in_stock ? undefined : 'Out of stock'}>
+                  {s.unit}{cart.itemOf(s.id) && <i className="pack-in-cart" aria-label=" (in your cart)" />}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="product-unit">{p.unit}</span>
+          )}
           <div className="product-foot">
             <div>
               {onBill ? (

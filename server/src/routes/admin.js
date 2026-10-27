@@ -187,7 +187,7 @@ router.delete('/services/:id', requireSuper, cleansOldImages('services'), h(asyn
 // ---------- products ----------
 router.get('/products', h(async (req, res) => {
   const { rows } = await query(
-    `SELECT p.*, s.name AS service_name, s.slug AS service_slug, s.category_id,
+    `SELECT p.*, fn_pack_qty(p.unit) AS pack_qty, s.name AS service_name, s.slug AS service_slug, s.category_id,
             c.name AS category_name, c.icon AS category_icon, c.color AS category_color
        FROM products p
        JOIN services s ON s.id = p.service_id
@@ -233,6 +233,14 @@ router.patch('/products/:id/flag', requireSuper, h(async (req, res) => {
     db.query('CALL sp_set_product_flag($1,$2,$3)', [req.params.id, req.body?.flag, Boolean(req.body?.value)])
   );
   res.status(204).end();
+}));
+
+// 📦 HQ adds a pack size to a product (body: { unit: '200 g' }) — a linked copy, no price (fn_add_pack_size)
+router.post('/products/:id/pack-sizes', requireSuper, h(async (req, res) => {
+  const row = await asActor(req.user.id, async (db) =>
+    (await db.query('SELECT * FROM fn_add_pack_size($1,$2)', [Number(req.params.id), String(req.body?.unit ?? '')])).rows[0]
+  );
+  res.status(201).json(row);
 }));
 
 router.delete('/products/:id', requireSuper, cleansOldImages('products'), h(async (req, res) => {

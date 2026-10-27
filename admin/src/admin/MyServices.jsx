@@ -96,6 +96,9 @@ export function FranchiseServices({ franchiseId }) {
   );
 }
 
+// a product with its pack size, e.g. "Sugar · 1 kg" (📦 one product can have several sizes)
+const sized = (p) => (p.unit ? `${p.name} · ${p.unit}` : p.name);
+
 // 🚫 What this city has out of stock right now, with "back in stock" for each and for all.
 function OutOfStock({ list, base, onChange }) {
   const toast = useToast();
@@ -111,7 +114,7 @@ function OutOfStock({ list, base, onChange }) {
       toast(e.message, 'error');
     }
   };
-  const back = (p) => run(() => api(`${base}/products/${p.id}/stock`, { method: 'PATCH', body: { in_stock: true } }), `${p.name} is back in stock`);
+  const back = (p) => run(() => api(`${base}/products/${p.id}/stock`, { method: 'PATCH', body: { in_stock: true } }), `${sized(p)} is back in stock`);
   const all = async () => (await askConfirm(`Put all ${items.length} items back in stock?`, { okText: 'Yes, all back in stock', cancelText: 'Cancel' }))
     && run(() => api(`${base}/restock`, { method: 'POST' }), (r) => `${r.restocked} items back in stock`);
   return (
@@ -168,7 +171,7 @@ function ProductsOf({ service, franchiseId, onClose, onAsk, onStock }) {
     setBusy(p.id);
     try {
       await api(`${base}/products/${p.id}/stock`, { method: 'PATCH', body: { in_stock: inStock } });
-      toast(inStock ? `${p.name}: back in stock` : `${p.name}: out of stock — customers can't order it`);
+      toast(inStock ? `${sized(p)}: back in stock` : `${sized(p)}: out of stock — customers can't order it`);
       list.reload();
       onStock?.();
     } catch (e) {

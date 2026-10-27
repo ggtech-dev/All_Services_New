@@ -26,7 +26,7 @@ LANGUAGE plpgsql STABLE SET search_path FROM CURRENT AS $$
 DECLARE
   o JSONB := fn_trip_options();
   v_type TEXT := trim(coalesce(p->>'trip_type', ''));
-  v_car TEXT := coalesce(nullif(trim(coalesce(p->>'car_type', '')), ''), 'Any car');
+  v_car JSONB; -- {car_type, car_model_id, car_seats}: fn_trip_car (car_rental.sql — the car cards)
   v_drop TEXT := left(trim(regexp_replace(coalesce(p->>'drop', ''), '\s+', ' ', 'g')), 200);
   v_date DATE;
   v_time TIME;
@@ -40,9 +40,7 @@ BEGIN
   IF NOT (o->'trip_types' ? v_type) THEN
     RAISE EXCEPTION 'Choose the type of trip' USING ERRCODE = '22023';
   END IF;
-  IF NOT (o->'car_types' ? v_car) THEN
-    RAISE EXCEPTION 'Choose the type of car' USING ERRCODE = '22023';
-  END IF;
+  v_car := fn_trip_car(p);
   IF length(v_drop) < 2 THEN
     RAISE EXCEPTION 'Tell us where to go (drop place)' USING ERRCODE = '22023';
   END IF;
@@ -77,11 +75,11 @@ BEGIN
   END IF;
   RETURN jsonb_build_object(
     'trip_type', v_type, 'drop', v_drop, 'trip_date', v_date, 'trip_time', to_char(v_time, 'HH24:MI'),
-    'return_date', v_return, 'passengers', v_pax, 'car_type', v_car,
+    'return_date', v_return, 'passengers', v_pax,
     'details', nullif(left(trim(regexp_replace(coalesce(p->>'details', ''), '\s+', ' ', 'g')), 400), ''),
     -- shown as the booking time everywhere: "Sat 12 Dec 2026, 6:30 AM"
     'label', to_char(v_date, 'Dy DD Mon YYYY') || ', ' || ltrim(to_char(v_time, 'HH12:MI AM'), '0'),
-    'return_label', CASE WHEN v_return IS NOT NULL THEN to_char(v_return, 'Dy DD Mon YYYY') END);
+    'return_label', CASE WHEN v_return IS NOT NULL THEN to_char(v_return, 'Dy DD Mon YYYY') END) || v_car;
 END $$;
 
 -- "Book again" (after a partner cancelled, or to change the details): the customer places a new booking and the
