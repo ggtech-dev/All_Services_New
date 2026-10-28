@@ -59,12 +59,15 @@ BEGIN
   RETURN v;
 END $$;
 
--- The sizes of one product stay one product: a new photo, name, brand, description, emoji or section on one size is
--- given to all its sizes (only the pack text, stock and "live" are per size).
+-- The sizes of one product stay one product: a new name, brand, description, emoji or section on one size is given to
+-- all its sizes (only the pack text, stock and "live" are per size). A new photo goes to the sizes that shared the old
+-- one — a size with its own photo (e.g. the 2 L bottle) keeps it.
 CREATE OR REPLACE FUNCTION fn_pack_sync() RETURNS trigger
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-  UPDATE products SET image_url = NEW.image_url, image_credit = NEW.image_credit, name = NEW.name, brand = NEW.brand,
+  UPDATE products SET image_url = CASE WHEN image_url IS NOT DISTINCT FROM OLD.image_url THEN NEW.image_url ELSE image_url END,
+                      image_credit = CASE WHEN image_url IS NOT DISTINCT FROM OLD.image_url THEN NEW.image_credit ELSE image_credit END,
+                      name = NEW.name, brand = NEW.brand,
                       description = NEW.description, icon = NEW.icon, section = NEW.section, updated_at = now()
    WHERE (pack_group = NEW.pack_group OR id = NEW.pack_group) AND id <> NEW.id
      AND (image_url, image_credit, name, brand, description, icon, section)

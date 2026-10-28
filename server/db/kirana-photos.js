@@ -10,7 +10,7 @@
 export const KIRANA_SECTIONS = [
   'Rice & Grains', 'Atta, Rava & Flours', 'Dals & Pulses', 'Oils & Ghee', 'Spices & Masalas', 'Salt, Sugar & Jaggery',
   'Tea, Coffee & Health Drinks', 'Breakfast & Instant Food', 'Biscuits & Snacks', 'Chocolates & Sweets',
-  'Pickles, Sauces & Spreads', 'Dry Fruits & Nuts', 'Water & Drinks', 'Cleaning & Laundry', 'Personal Care',
+  'Pickles, Sauces & Spreads', 'Dry Fruits & Nuts', 'Cold Drinks', 'Water & Drinks', 'Cleaning & Laundry', 'Personal Care',
 ];
 
 const R = 'Rice & Grains', A = 'Atta, Rava & Flours', D = 'Dals & Pulses', O = 'Oils & Ghee', S = 'Spices & Masalas',
@@ -266,4 +266,95 @@ export const KIRANA_PHOTOS_2 = [
   ['phenyl', 'Phenyl', 'Lizol'], ['scotch-brite-scrub-pads', 'Scrub Pads', 'Scotch-Brite'], ['garbage-bags', 'Garbage Bags (Medium)', 'Baggit'],
   ['colgate-toothbrush', 'Toothbrush', 'Colgate'], ['parachute-hair-oil', 'Hair Oil', 'Parachute'], ['dettol-hand-wash', 'Hand Wash', 'Dettol'],
   ['whisper-sanitary-pads', 'Sanitary Pads', 'Whisper'], ['gillette-shaving-cream', 'Shaving Cream', 'Gillette'],
+];
+
+// 🛒 New Kirana items (2026-10-28, user's own AI photos F:\Kirana_Images\priority2-grocery-products, 1024 px):
+// [file, name, section, unit, more sizes]. Added as new products (as per the shop bill — no price).
+export const KIRANA_NEW_3 = [
+  ['bajra-flour', 'Bajra Flour (Sajja Pindi)', 'Atta, Rava & Flours', '1 kg', ['500 g']],
+  ['dry-green-peas', 'Dry Green Peas (Batani)', 'Dals & Pulses', '500 g', ['1 kg']],
+  ['kashmiri-chilli-powder', 'Kashmiri Chilli Powder', 'Spices & Masalas', '100 g', ['200 g', '500 g']],
+  ['chana-masala', 'Chana Masala', 'Spices & Masalas', '100 g', []],
+  ['kasuri-methi', 'Kasuri Methi', 'Spices & Masalas', '25 g', ['100 g']],
+  ['jaggery-powder', 'Jaggery Powder', 'Salt, Sugar & Jaggery', '500 g', ['1 kg']],
+  ['rock-sugar', 'Rock Sugar (Patika Bellam)', 'Salt, Sugar & Jaggery', '250 g', ['500 g']],
+  ['baking-soda', 'Baking Soda', 'Breakfast & Instant Food', '100 g', []],
+  ['vadiyalu', 'Vadiyalu (Sun-dried Fryums)', 'Pickles, Sauces & Spreads', '200 g', []],
+  ['pista', 'Pista', 'Dry Fruits & Nuts', '100 g', ['250 g']],
+];
+
+// 🧴 Household & personal care (2026-10-28, user's own AI photos F:\Kirana_Images\household-personal-care, 1024 px).
+// The photos show a brand, so each item is listed under that brand (what the customer sees is what they order).
+// [file, name, section, unit, more sizes, brand]
+export const KIRANA_NEW_4 = [
+  ['aa-batteries', 'AA Batteries', 'Cleaning & Laundry', '4 pack', [], 'Eveready'],
+  ['aluminium-foil', 'Aluminium Foil', 'Cleaning & Laundry', '9 m roll', ['25 m roll'], 'Freshwrapp'],
+  ['broom', 'Broom (Cheepuru)', 'Cleaning & Laundry', '1 pc', [], null],
+  ['naphthalene-balls', 'Naphthalene Balls', 'Cleaning & Laundry', '100 g', [], "Mothi's"],
+  ['tissue-roll', 'Toilet Tissue Roll', 'Cleaning & Laundry', '2 rolls', ['4 rolls'], 'Origami'],
+  ['custard-powder', 'Custard Powder (Vanilla)', 'Breakfast & Instant Food', '100 g', [], 'Weikfield'],
+  ['hand-sanitizer', 'Hand Sanitizer', 'Personal Care', '200 ml', ['500 ml'], 'Dettol'],
+  ['face-wash', 'Neem Face Wash', 'Personal Care', '100 ml', ['50 ml'], 'Himalaya'],
+  ['petroleum-jelly', 'Petroleum Jelly', 'Personal Care', '100 ml', ['50 ml'], 'Vaseline'],
+  ['talcum-powder', 'Talcum Powder', 'Personal Care', '100 g', ['300 g'], "Pond's"],
+  ['deodorant', 'Deodorant Spray', 'Personal Care', '150 ml', [], 'Nivea'],
+  ['shaving-razor', 'Razor + Blades', 'Personal Care', '1 pack', [], 'Gillette'],
+  ['hair-dye', 'Expert Rich Creme Hair Colour (Black)', 'Personal Care', '1 pack', [], 'Godrej'],
+  ['mehendi', 'Henna Powder (Mehendi)', 'Personal Care', '100 g', [], 'Nupur'],
+];
+
+// 🍚 25 kg rice brands sold in Telangana (2026-10-28, user's own AI photos F:\Kirana_Images\telangana-25kg-rice-brand-images;
+// the small "AI" corner badge painted out). The bag says 25 KG, so only that size. [file, name, brand]
+export const RICE_BRANDS_25KG = [
+  ['rice-kurnool-sona-masoori', 'Sona Masoori Rice', 'Kurnool'],
+  ['rice-vajrateja-sona-masoori', 'Sona Masoori Rice', 'Vajrateja'],
+  ['rice-original-gajraj-hmt', 'HMT Rice', 'Original Gajraj'],
+  ['rice-palnadu-pure-hmt', 'Pure HMT Rice', 'Palnadu'],
+  ['rice-rri-hmt', 'HMT Rice', 'RRI'],
+  ['rice-jai-sriram-lachkari-kolam', 'Lachkari Kolam Rice', 'Jai Sriram'],
+  ['rice-dawat-parboiled', 'Parboiled Rice', 'Daawat'],
+  ['rice-kisan-parboiled', 'Parboiled Rice', 'Kisan'],
+];
+
+// 🥤 Cold drinks (2026-10-28, user's own AI photos pasted in chat): one card per drink, each size with its own photo
+// (the bottle shows its size). [name, brand, [[size, file], …]] — files public/products/kirana/<file>.jpg, small → big.
+export const COLD_DRINKS = [
+  ['Coca-Cola', 'Coca-Cola', [['250 ml', 'coca-cola-250ml'], ['500 ml', 'coca-cola-500ml'], ['1 L', 'coca-cola-1l'], ['2 L', 'coca-cola-2l']]],
+  ['Thums Up', 'Thums Up', [['500 ml', 'thums-up-500ml'], ['1 L', 'thums-up-1l']]],
+  ['Sprite', 'Sprite', [['250 ml', 'sprite-250ml'], ['500 ml', 'sprite-500ml'], ['1 L', 'sprite-1l'], ['2 L', 'sprite-2l']]],
+  ['Fanta Orange', 'Fanta', [['250 ml', 'fanta-250ml'], ['500 ml', 'fanta-500ml']]],
+  ['Limca', 'Limca', [['250 ml', 'limca-250ml'], ['2 L', 'limca-2l']]],
+  ['Pepsi', 'Pepsi', [['250 ml', 'pepsi-250ml'], ['500 ml', 'pepsi-500ml'], ['1 L', 'pepsi-1l'], ['2 L', 'pepsi-2l']]],
+  ['Mirinda Orange', 'Mirinda', [['1 L', 'mirinda-1l']]],
+  ['Mountain Dew', 'Mountain Dew', [['250 ml', 'mountain-dew-250ml'], ['1 L', 'mountain-dew-1l'], ['2 L', 'mountain-dew-2l']]],
+  ['Campa Cola', 'Campa', [['500 ml', 'campa-cola-500ml'], ['1 L', 'campa-cola-1l'], ['2 L', 'campa-cola-2l']]],
+];
+
+// 🆕 28 Oct batch 2 ("F:\new images", user's own AI photos). [file, name, brand, section/where, unit]
+// 12 more 25 kg rice bags (the bag says 25 KG → only that size)
+export const RICE_BRANDS_25KG_2 = [
+  ['rice-telangana-sona', 'Telangana Sona Rice (RNR 15048)', 'Telangana Sona'], ['rice-lalitha-sona-masoori', 'Sona Masoori Rice', 'Lalitha'],
+  ['rice-india-gate-sona-masoori', 'Sona Masoori Rice', 'India Gate'], ['rice-24-carat-sona-masoori', 'Sona Masoori Rice', '24 Carat'],
+  ['rice-bpt-sona-masoori', 'BPT Sona Masoori Rice', 'Bapatla'], ['rice-jsr-hmt', 'HMT Rice', 'JSR (Jai Sri Ram)'],
+  ['rice-chittimutyalu', 'Chittimutyalu Rice', null], ['rice-kolam', 'Wada Kolam Rice', null], ['rice-idli-rice', 'Idli Rice (25 kg bag)', null],
+  ['rice-brown-sona', 'Brown Sona Masoori (Unpolished)', null], ['rice-basmati', 'Basmati Rice (Biryani Rice)', null],
+  ['rice-steam-rice', 'Steam Rice (Ukkudu Biyyam)', null],
+];
+// Telangana / Andhra brands: [file, name, brand, service slug, section, unit]
+export const LOCAL_BRANDS = [
+  ['gold-drop-sunflower-oil', 'Refined Sunflower Oil', 'Gold Drop', 'food-daily-kirana-delivery', 'Oils & Ghee', '1 L'],
+  ['vijaya-sunflower-oil', 'Sunflower Oil', 'Vijaya', 'food-daily-kirana-delivery', 'Oils & Ghee', '1 L'],
+  ['ruchi-gold-palmolein', 'Palmolein Oil', 'Ruchi Gold', 'food-daily-kirana-delivery', 'Oils & Ghee', '1 L'],
+  ['kohinoor-basmati', 'Basmati Rice', 'Kohinoor', 'food-daily-kirana-delivery', 'Rice & Grains', '1 kg'],
+  ['gemini-tea', 'Tea Powder', 'Gemini', 'food-daily-kirana-delivery', 'Tea, Coffee & Health Drinks', '250 g'],
+  ['swagruha-pickle', 'Mango Pickle (Avakaya)', 'Swagruha', 'food-daily-kirana-delivery', 'Pickles, Sauces & Spreads', '500 g'],
+  ['sangam-milk', 'Milk (packet)', 'Sangam', 'food-daily-fresh-milk', null, '500 ml'],
+  ['thirumala-milk', 'Milk (packet)', 'Thirumala', 'food-daily-fresh-milk', null, '500 ml'],
+  ['dodla-curd', 'Curd', 'Dodla', 'food-daily-fresh-milk', null, '400 g'],
+  ['mangaldeep-agarbatti', 'Agarbatti', 'Mangaldeep', 'food-daily-pooja-store', null, '1 pack'],
+];
+// 🍬 Sweet Shop (new service): [file, name, brand, unit]
+export const SWEETS = [
+  ['pullareddy-sweets-box', 'Assorted Ghee Sweets Box', 'Pulla Reddy', '500 g'],
+  ['almond-house-sweets-box', 'Assorted Sweets Box', 'Almond House', '500 g'],
 ];

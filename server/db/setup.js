@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { pool, SCHEMA } from '../src/db.js';
 import { categories, homeVisitTypes, localities, products, serviceOptions, serviceSkills, serviceTypes } from './catalog.js';
 import { VEGETABLES, VEG_PACK_PHOTOS } from './vegetables.js';
-import { KIRANA_PHOTOS, KIRANA_PHOTOS_2, KIRANA_SECTIONS, MILK_PHOTOS } from './kirana-photos.js';
+import { KIRANA_PHOTOS, KIRANA_PHOTOS_2, KIRANA_NEW_3, KIRANA_NEW_4, RICE_BRANDS_25KG, RICE_BRANDS_25KG_2, LOCAL_BRANDS, SWEETS, COLD_DRINKS, KIRANA_SECTIONS, MILK_PHOTOS } from './kirana-photos.js';
 import { FRUITS } from './fruits.js';
 import { POOJA_PHOTOS, POOJA_SECTIONS } from './pooja-photos.js';
 import { BAKERY_PHOTOS, BAKERY_SECTIONS } from './bakery-photos.js';
@@ -636,8 +636,8 @@ try {
   // One time per list version (2026-10-24): 🥬 Fresh Vegetables = our own catalog with our own photos (db/vegetables.js).
   // The vegetables we had keep their product (old orders point at them) and get the new name / photo / unit; the rest
   // are added, or updated if an earlier version added them. Every vegetable gets its place in the order; the older
-  // "Vegetable Delivery" packs get the same photos. A new list version = a new key below (v3: + 9 varieties).
-  const vegDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'vegetables_v3'");
+  // "Vegetable Delivery" packs get the same photos. A new list version = a new key below (v3: + 9 varieties; v4, 2026-10-28: + 7 — lemon, shallots, alasanda…; v5: + 11 — bajji mirchi, natu tamata, amla…).
+  const vegDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'vegetables_v5'");
   if (!vegDone.rowCount) {
     const svc = await client.query("SELECT id FROM services WHERE slug = 'food-daily-fresh-vegetables'");
     if (svc.rowCount) {
@@ -666,7 +666,7 @@ try {
       }
       console.log(`🥬 Fresh Vegetables: ${VEGETABLES.length} with our photos (${added} new).`);
     }
-    await client.query("INSERT INTO site_settings (key, value) VALUES ('vegetables_v3', current_date::text)");
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('vegetables_v5', current_date::text)");
   }
   // …and the two vegetable services' own photo (shop header, cards) = our basket photo instead of the licensed one.
   const vegPhotoDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'veg_service_photo_v1'");
@@ -1385,6 +1385,161 @@ try {
     }
     await client.query("INSERT INTO site_settings (key, value) VALUES ('pack_sizes_v1', current_date::text)");
     console.log(`📦 Pack sizes: ${items} Kirana items, ${added} sizes added.`);
+  }
+
+  // One time (2026-10-28): 🛒 new Kirana items with our own AI photos (db/kirana-photos.js KIRANA_NEW_3, files in
+  // public/products/kirana/): added in their section (as per the shop bill), with their common pack sizes.
+  const kirana3Done = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_new_items_v1'");
+  if (!kirana3Done.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      let added = 0, sizes = 0;
+      for (const [file, name, section, unit, more] of KIRANA_NEW_3) {
+        const r = await client.query(
+          `INSERT INTO products (service_id, slug, name, unit, price, sell_by, icon, image_url, section, sort_order)
+           VALUES ($1, $2, $3, $4, 0, 'pack', '🛒', $5, $6, 9999)
+           ON CONFLICT (slug) DO NOTHING RETURNING id`,
+          [svc.id, `food-daily-kirana-delivery-${file}`, name, unit, `/products/kirana/${file}.jpg`, section]);
+        if (!r.rows[0]) continue;
+        added++;
+        for (const size of more) {
+          await client.query('SELECT fn_add_pack_size($1, $2)', [r.rows[0].id, size]);
+          sizes++;
+        }
+      }
+      // every item in its section's place (the new ones at the end of their section)
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, KIRANA_SECTIONS]);
+      console.log(`🛒 Kirana: ${added} new items with our AI photos (+ ${sizes} pack sizes).`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_new_items_v1', current_date::text)");
+  }
+
+  // One time (2026-10-28): 🧴 household & personal care items with our own AI photos (KIRANA_NEW_4), under the brand
+  // their photo shows, with common pack sizes (as per the shop bill).
+  const kirana4Done = await client.query("SELECT 1 FROM site_settings WHERE key = 'kirana_new_items_v2'");
+  if (!kirana4Done.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      let added = 0, sizes = 0;
+      for (const [file, name, section, unit, more, brand] of KIRANA_NEW_4) {
+        const r = await client.query(
+          `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order)
+           VALUES ($1, $2, $3, $4, $5, 0, 'pack', '🛒', $6, $7, 9999)
+           ON CONFLICT (slug) DO NOTHING RETURNING id`,
+          [svc.id, `food-daily-kirana-delivery-${file}`, name, brand, unit, `/products/kirana/${file}.jpg`, section]);
+        if (!r.rows[0]) continue;
+        added++;
+        for (const size of more) { await client.query('SELECT fn_add_pack_size($1, $2)', [r.rows[0].id, size]); sizes++; }
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, KIRANA_SECTIONS]);
+      console.log(`🧴 Kirana: ${added} household & personal care items with our AI photos (+ ${sizes} pack sizes).`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_new_items_v2', current_date::text)");
+  }
+
+  // One time (2026-10-28): 🍚 Telangana 25 kg rice brands (RICE_BRANDS_25KG) in Rice & Grains, with our own photos.
+  const riceDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'rice_brands_25kg_v1'");
+  if (!riceDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      let added = 0;
+      for (const [file, name, brand] of RICE_BRANDS_25KG) {
+        const r = await client.query(
+          `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order)
+           VALUES ($1, $2, $3, $4, '25 kg', 0, 'pack', '🍚', $5, 'Rice & Grains', 0)
+           ON CONFLICT (slug) DO NOTHING`,
+          [svc.id, `food-daily-kirana-delivery-${file}`, name, brand, `/products/kirana/${file}.jpg`]);
+        added += r.rowCount;
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, KIRANA_SECTIONS]);
+      console.log(`🍚 Kirana: ${added} rice brands (25 kg) with our AI photos.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('rice_brands_25kg_v1', current_date::text)");
+  }
+
+  // One time (2026-10-28): 🥤 Cold Drinks section in Kirana (COLD_DRINKS): one card per drink, every size its own row
+  // (pack_group) with its own photo — inserted directly, so each size keeps its photo.
+  const coldDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'cold_drinks_v1'");
+  if (!coldDone.rowCount) {
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      let cards = 0, rows = 0;
+      for (const [name, brand, sizes] of COLD_DRINKS) {
+        let group = null;
+        for (const [unit, file] of sizes) {
+          const r = await client.query(
+            `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order, pack_group)
+             VALUES ($1, $2, $3, $4, $5, 0, 'pack', '🥤', $6, 'Cold Drinks', 9999, $7)
+             ON CONFLICT (slug) DO NOTHING RETURNING id`,
+            [svc.id, `food-daily-kirana-delivery-${file}`, name, brand, unit, `/products/kirana/${file}.jpg`, group]);
+          if (!r.rows[0]) continue;
+          rows++;
+          if (group === null) {
+            group = r.rows[0].id;
+            if (sizes.length > 1) await client.query('UPDATE products SET pack_group = id WHERE id = $1', [group]);
+            cards++;
+          }
+        }
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, KIRANA_SECTIONS]);
+      console.log(`🥤 Kirana: Cold Drinks — ${cards} drinks, ${rows} sizes, each with its own photo.`);
+    }
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('cold_drinks_v1', current_date::text)");
+  }
+
+  // One time (2026-10-28): 12 more 25 kg rice bags, Telangana / Andhra brands (oil, tea, pickle, milk, curd, agarbatti)
+  // and a new 🍬 Sweet Shop in Food & Daily (like Bread / Bakery: as per the shop bill, on in every city).
+  const batch2Done = await client.query("SELECT 1 FROM site_settings WHERE key = 'local_brands_sweets_v1'");
+  if (!batch2Done.rowCount) {
+    const sid = async (slug) => (await client.query('SELECT id FROM services WHERE slug = $1', [slug])).rows[0]?.id;
+    const add = async (svc, file, dir, name, brand, unit, section) => (await client.query(
+      `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order)
+       VALUES ($1, $2, $3, $4, $5, 0, 'pack', '🛒', $6, $7, 9999) ON CONFLICT (slug) DO NOTHING`,
+      [svc, `${(await client.query('SELECT slug FROM services WHERE id = $1', [svc])).rows[0].slug}-${file}`, name, brand, unit, `/products/${dir}/${file}.jpg`, section])).rowCount;
+    let n = 0;
+    const kirana = await sid('food-daily-kirana-delivery');
+    for (const [file, name, brand] of RICE_BRANDS_25KG_2) n += await add(kirana, file, 'kirana', name, brand, '25 kg', 'Rice & Grains');
+    for (const [file, name, brand, slug, section, unit] of LOCAL_BRANDS) {
+      const svc = await sid(slug);
+      if (svc) n += await add(svc, file, slug === 'food-daily-kirana-delivery' ? 'kirana' : slug === 'food-daily-pooja-store' ? 'pooja' : 'daily', name, brand, unit, section);
+    }
+    // 🍬 Sweet Shop service (copies Bread / Bakery's settings), switched on in every franchise
+    const bakery = (await client.query("SELECT * FROM services WHERE slug = 'food-daily-bread-bakery-delivery'")).rows[0];
+    if (bakery) {
+      const s = (await client.query(
+        `INSERT INTO services (category_id, slug, name, description, image_url, base_price, price_unit, eta_minutes, sort_order, skill_code,
+                               delivery_fee, price_on_bill, allows_list, is_active)
+         VALUES ($1, 'food-daily-sweet-shop', 'Sweet Shop', 'Sweets from your town''s sweet shops — sweet boxes, ghee sweets and more. Pay as per the shop bill.',
+                 '/products/sweets/pullareddy-sweets-box.jpg', 0, 'as per shop bill', $2, $3, $4, $5, true, $6, true)
+         ON CONFLICT (slug) DO UPDATE SET is_active = true RETURNING id`,
+        [bakery.category_id, bakery.eta_minutes, bakery.sort_order, bakery.skill_code, bakery.delivery_fee, bakery.allows_list])).rows[0].id;
+      await client.query('INSERT INTO franchise_services (franchise_id, service_id) SELECT id, $1 FROM franchises ON CONFLICT DO NOTHING', [s]);
+      for (const [file, name, brand, unit] of SWEETS) n += await add(s, file, 'sweets', name, brand, unit, null);
+    }
+    const ks = KIRANA_SECTIONS;
+    await client.query(
+      `UPDATE products p SET sort_order = x.n FROM (
+         SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+           FROM products p WHERE p.service_id = $1) x
+        WHERE x.id = p.id`, [kirana, ks]);
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('local_brands_sweets_v1', current_date::text)");
+    console.log(`🍬 ${n} products added: 12 rice bags, Telangana / Andhra brands, and the new Sweet Shop.`);
   }
 
   // One time (2026-10-26): 🚗 our own AI photo for each car model (public/products/cars/<name>.jpg) — the customer's car
