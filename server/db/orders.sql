@@ -106,6 +106,11 @@ DECLARE
   v_shopname TEXT := nullif(left(trim(regexp_replace(coalesce(p_shop_name, ''), '\s+', ' ', 'g')), 80), '');
   v_phone    TEXT := regexp_replace(coalesce(p_contact->>'phone', ''), '\D', '', 'g');
 BEGIN
+  -- 🎉 one order at a time per mobile number while the free-delivery offer is decided: "Place order" tapped 3 times at
+  -- the same moment must not give 3 free deliveries (the 2nd waits until the 1st is saved, then sees it). Held only
+  -- until this order is saved; other customers never wait.
+  PERFORM pg_advisory_xact_lock(hashtext('free-delivery:' || coalesce(
+    (SELECT nullif(right(regexp_replace(coalesce(phone, ''), '\D', '', 'g'), 10), '') FROM users WHERE id = p_customer_id), 'u' || p_customer_id)));
   -- contact & address
   IF coalesce(trim(p_contact->>'name'), '') = '' THEN
     RAISE EXCEPTION 'Please enter the name for delivery' USING ERRCODE = '22023';

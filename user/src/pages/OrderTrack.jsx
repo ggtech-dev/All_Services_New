@@ -18,6 +18,32 @@ import TripCar from '../components/TripCar.jsx';
 import VisitInfo from '../components/VisitInfo.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 
+// ⏳ The honest truth while an order waits (partner_wait.sql): all partners busy, nobody online, place in the line.
+// The wait time is shown only when it comes from real past deliveries.
+function WaitNote({ wait, who }) {
+  if (!wait || wait.state === 'later' || wait.state === 'free') return null;
+  return (
+    <div className={`wait-note wait-${wait.state}`}>
+      {wait.state === 'busy' ? (
+        <>
+          <b>{`⏳ All our ${who}s are busy right now`}</b>
+          {/* short sentences, so each one translates (i18n-dict.js PATTERNS) */}
+          <span>{`${wait.online} online, all finishing other orders.`}</span>
+          <span>{wait.ahead ? `${wait.ahead} ${wait.ahead === 1 ? 'order is' : 'orders are'} ahead of yours in the line.` : 'Yours is next in the line.'}</span>
+          <span>{'The first partner to get free takes it.'}</span>
+          {wait.wait_min && <span>{`Expected wait: about ${wait.wait_min} minutes.`}</span>}
+        </>
+      ) : (
+        <>
+          <b>{`😔 No ${who} is online right now`}</b>
+          <span>{'Your order is safe with us. It goes to the first partner who comes online, and our team is watching it.'}</span>
+        </>
+      )}
+      <small>{'You can cancel any time before a partner accepts.'}</small>
+    </div>
+  );
+}
+
 // Live map of the assigned agent coming to the customer. Refreshes every 8 seconds.
 function LiveTrack({ orderId, who, icon }) {
   const [live, setLive] = useState(null);
@@ -114,6 +140,7 @@ export default function OrderTrack() {
           <small className="muted">{isService ? 'Booking' : 'Order'} #{order.id} · {when(order.created_at)}</small>
           <h1>{statusLabel(order.status, order.kind)}</h1>
           {order.status === 'placed' && <p className="muted">Waiting for a nearby {who} to accept…<span className="pulse" /></p>}
+          {order.status === 'placed' && <WaitNote wait={order.wait} who={who} />}
           {order.status === 'assigned' && <p className="muted">{order.agent_name} accepted your {isService ? 'booking' : 'order'} and will {isService ? 'come' : 'pick it up'} soon.</p>}
           {order.status === 'picked_up' && <p className="muted">{order.agent_name} is on the way to {order.locality_name}.</p>}
           {order.status === 'delivered' && <p className="muted">{isService ? 'Completed' : 'Delivered'} at {time(order.delivered_at)}. Thank you!</p>}

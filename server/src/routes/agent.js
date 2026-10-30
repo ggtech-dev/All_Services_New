@@ -205,11 +205,15 @@ router.get('/available', h(async (req, res) => {
                          CASE WHEN a.last_location_at > now() - interval '10 minutes' THEN a.last_lng ELSE l2.lng END AS lng
                     FROM agents a LEFT JOIN localities l2 ON l2.id = a.locality_id WHERE a.user_id = $1) me ON true
       WHERE o.status = 'placed' AND o.agent_id IS NULL
+        AND o.franchise_id = (SELECT franchise_id FROM agents WHERE user_id = $1) -- own city first (index), then the rules below
         AND o.skill_code = ANY ((SELECT skills FROM agents WHERE user_id = $1)::text[])
         AND fn_agent_may_take($1, o.id) -- subscription-only services: subscribed agents only
         AND now() < fn_order_due_at(o) + interval '24 hours' -- ⏰ long overdue: only the admin handles it (overdue.sql)
         AND fn_agent_in_zone($1) -- 📍 only while inside their franchise's range (geo.sql)
-      ORDER BY distance_km NULLS LAST, o.created_at
+      -- nearest first, but an order already waiting 10+ minutes for now goes to the top (oldest first), so a far-away
+      -- order is never left behind while newer, nearer ones keep getting taken (the line the customer is told about)
+      ORDER BY (o.created_at < now() - interval '10 minutes' AND fn_order_due_at(o) <= now() + interval '3 hours') DESC,
+               CASE WHEN o.created_at < now() - interval '10 minutes' AND fn_order_due_at(o) <= now() + interval '3 hours' THEN o.created_at END, distance_km NULLS LAST, o.created_at
       LIMIT 50`,
     [req.user.id]
   );

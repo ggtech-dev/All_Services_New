@@ -261,6 +261,8 @@ router.get('/', h(async (req, res) => {
 router.get('/:id', h(async (req, res) => {
   const order = await loadOrder(Number(req.params.id), { customerId: req.user.id });
   if (!order) return res.status(404).json({ error: 'Order not found' });
+  // ⏳ still waiting for a partner: are they all busy, how many orders are ahead (partner_wait.sql)
+  if (order.status === 'placed') order.wait = (await query('SELECT fn_order_wait($1) AS w', [order.id])).rows[0].w;
   res.json(order);
 }));
 

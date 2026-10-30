@@ -80,6 +80,7 @@ try {
   await client.query(await sql('./homefood.sql')); // 🍱 Home Food & Cooks: Book a Cook by the hour, Tomorrow's Meal pre-orders
   await client.query(await sql('./offers.sql')); // 📢 Offers near you: local shops' offers — shop asks, franchise checks, HQ approves
   await client.query(await sql('./transport.sql')); // 🚚 Goods Transportation: goods vehicles of the city, customers call the owner
+  await client.query(await sql('./partner_wait.sql')); // ⏳ honest waiting: "all our partners are busy", place in line — after overdue.sql
 
   await client.query('BEGIN');
 

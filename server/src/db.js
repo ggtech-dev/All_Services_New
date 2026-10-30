@@ -11,6 +11,9 @@ export const pool = new pg.Pool({
   user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   options: `-c search_path=${SCHEMA},public`,
+  // 20 connections (not pg's default 10): under a rush of orders requests wait less for a free connection.
+  // Postgres allows 100; set PG_POOL_MAX in .env to change it.
+  max: Number(process.env.PG_POOL_MAX || 20),
 });
 
 export const query = (text, params) => pool.query(text, params);

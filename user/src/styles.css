@@ -1023,3 +1023,9 @@ body:has(.cart-bar) .corner-dock { bottom: 84px; }
 .account-switch button.active b { color: var(--primary, #4f46e5); }
 
 .otp-instead { display: block; margin: 8px auto 0; font-weight: 600; }
+
+/* ---------- ⏳ honest waiting: all partners busy / nobody online (OrderTrack WaitNote) ---------- */
+.wait-note { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding: 10px 12px; border-radius: 12px; font-size: 14px; }
+.wait-note small { color: #64748b; }
+.wait-busy { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.wait-none { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }

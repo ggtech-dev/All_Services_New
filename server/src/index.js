@@ -115,12 +115,14 @@ function website(dir) {
 }
 
 const port = Number(process.env.PORT || 5000);
+// a rush of customers at the same moment waits in the queue instead of being refused (default 511)
+const BACKLOG = 4096;
 const built = SITES.filter(([name]) => existsSync(path.join(APPS_DIR, name, 'dist', 'index.html')));
 if (built.length) {
   for (const [name, offset] of built) {
-    website(path.join(APPS_DIR, name, 'dist')).listen(port + offset, () =>
+    website(path.join(APPS_DIR, name, 'dist')).listen({ port: port + offset, backlog: BACKLOG }, () =>
       console.log(`All Services ${name.padEnd(10)} app → http://localhost:${port + offset}`));
   }
 } else {
-  website(null).listen(port, () => console.log(`All Services API running on http://localhost:${port}`));
+  website(null).listen({ port, backlog: BACKLOG }, () => console.log(`All Services API running on http://localhost:${port}`));
 }
