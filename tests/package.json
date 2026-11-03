@@ -1,0 +1,10 @@
+{
+  "name": "all-services-tests",
+  "private": true,
+  "description": "API, database and browser tests for All Services (run on a PC against a local copy, never against the live server)",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "pg": "^8.23.1",
+    "puppeteer-core": "^25.14.0"
+  }
+}
