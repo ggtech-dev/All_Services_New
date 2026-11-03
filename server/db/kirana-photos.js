@@ -303,6 +303,14 @@ export const KIRANA_NEW_4 = [
   ['mehendi', 'Henna Powder (Mehendi)', 'Personal Care', '100 g', [], 'Nupur'],
 ];
 
+// 2026-11-02: the three items whose photos were broken in the earlier batches (soya chunks, candles, face cream),
+// with our own AI photos. [file, name, section, first size, more sizes, brand the photo shows]
+export const KIRANA_NEW_5 = [
+  ['soya-chunks', 'Soya Chunks (Meal Maker)', 'Breakfast & Instant Food', '200 g', ['1 kg'], null],
+  ['candles', 'White Candles', 'Cleaning & Laundry', '10 pack', [], null],
+  ['face-cream', 'Fairness Face Cream', 'Personal Care', '50 g', ['25 g'], 'Glow & Lovely'],
+];
+
 // 🍚 25 kg rice brands sold in Telangana (2026-10-28, user's own AI photos F:\Kirana_Images\telangana-25kg-rice-brand-images;
 // the small "AI" corner badge painted out). The bag says 25 KG, so only that size. [file, name, brand]
 export const RICE_BRANDS_25KG = [

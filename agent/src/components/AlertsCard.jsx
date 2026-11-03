@@ -47,7 +47,8 @@ export default function AlertsCard({ who = 'agent', compact = false }) {
       </div>
       {a.permission === 'denied' ? (
         <p className="small alerts-blocked">
-          Notifications are blocked for this site. Tap the 🔒 next to the address → <b>Permissions</b> → <b>Notifications: Allow</b>, then reload.
+          {/* two whole sentences, so each one translates (i18n-dict.js) */}
+          {'Notifications are blocked for this site.'} <b>{'Tap the 🔒 next to the address → Permissions → Notifications: Allow, then reload.'}</b>
         </p>
       ) : iosNeedsInstall ? (
         <p className="small muted">On iPhone, first add the app to your Home Screen (Share → Add to Home Screen), open it from there, then turn alerts on.</p>

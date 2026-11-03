@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { pool, SCHEMA } from '../src/db.js';
 import { categories, homeVisitTypes, localities, products, serviceOptions, serviceSkills, serviceTypes } from './catalog.js';
 import { VEGETABLES, VEG_PACK_PHOTOS } from './vegetables.js';
-import { KIRANA_PHOTOS, KIRANA_PHOTOS_2, KIRANA_NEW_3, KIRANA_NEW_4, RICE_BRANDS_25KG, RICE_BRANDS_25KG_2, LOCAL_BRANDS, SWEETS, COLD_DRINKS, KIRANA_SECTIONS, MILK_PHOTOS } from './kirana-photos.js';
+import { KIRANA_PHOTOS, KIRANA_PHOTOS_2, KIRANA_NEW_3, KIRANA_NEW_4, KIRANA_NEW_5, RICE_BRANDS_25KG, RICE_BRANDS_25KG_2, LOCAL_BRANDS, SWEETS, COLD_DRINKS, KIRANA_SECTIONS, MILK_PHOTOS } from './kirana-photos.js';
 import { FRUITS } from './fruits.js';
 import { POOJA_PHOTOS, POOJA_SECTIONS } from './pooja-photos.js';
 import { BAKERY_PHOTOS, BAKERY_SECTIONS } from './bakery-photos.js';
@@ -1444,6 +1444,43 @@ try {
       console.log(`🧴 Kirana: ${added} household & personal care items with our AI photos (+ ${sizes} pack sizes).`);
     }
     await client.query("INSERT INTO site_settings (key, value) VALUES ('kirana_new_items_v2', current_date::text)");
+  }
+
+  // One time (2026-11-02): the 5 items whose AI photos were broken before — 🥬 Red Cabbage + Tapioca in Fresh Vegetables
+  // (placed in VEGETABLES order), 🛒 Soya Chunks, Candles, Face Cream in Kirana (KIRANA_NEW_5, in their sections).
+  const remainDone = await client.query("SELECT 1 FROM site_settings WHERE key = 'remain_items_v1'");
+  if (!remainDone.rowCount) {
+    const veg = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-fresh-vegetables'")).rows[0];
+    if (veg) {
+      for (const [i, [file, name, sellBy, unit, oldSlug]] of VEGETABLES.entries()) {
+        const slug = oldSlug || `food-daily-fresh-vegetables-${file}`;
+        if (['red-cabbage', 'tapioca'].includes(file)) {
+          await client.query(
+            `INSERT INTO products (service_id, slug, name, unit, price, sell_by, image_url, sort_order)
+             VALUES ($1, $2, $3, $4, 0, $5, $6, $7) ON CONFLICT (slug) DO NOTHING`,
+            [veg.id, slug, name, unit, sellBy, `/products/vegetables/${file}.jpg`, i + 1]);
+        }
+        await client.query('UPDATE products SET sort_order = $2 WHERE slug = $1 AND service_id = $3', [slug, i + 1, veg.id]);
+      }
+    }
+    const svc = (await client.query("SELECT id FROM services WHERE slug = 'food-daily-kirana-delivery'")).rows[0];
+    if (svc) {
+      for (const [file, name, section, unit, more, brand] of KIRANA_NEW_5) {
+        const r = await client.query(
+          `INSERT INTO products (service_id, slug, name, brand, unit, price, sell_by, icon, image_url, section, sort_order)
+           VALUES ($1, $2, $3, $4, $5, 0, 'pack', '🛒', $6, $7, 9999)
+           ON CONFLICT (slug) DO NOTHING RETURNING id`,
+          [svc.id, `food-daily-kirana-delivery-${file}`, name, brand, unit, `/products/kirana/${file}.jpg`, section]);
+        if (r.rows[0]) for (const size of more) await client.query('SELECT fn_add_pack_size($1, $2)', [r.rows[0].id, size]);
+      }
+      await client.query(
+        `UPDATE products p SET sort_order = x.n FROM (
+           SELECT p.id, row_number() OVER (ORDER BY coalesce(array_position($2::text[], p.section::text), 999), p.sort_order, p.id) AS n
+             FROM products p WHERE p.service_id = $1) x
+          WHERE x.id = p.id`, [svc.id, KIRANA_SECTIONS]);
+    }
+    console.log('🥬🛒 Red Cabbage, Tapioca, Soya Chunks, Candles, Face Cream added with our AI photos.');
+    await client.query("INSERT INTO site_settings (key, value) VALUES ('remain_items_v1', current_date::text)");
   }
 
   // One time (2026-10-28): 🍚 Telangana 25 kg rice brands (RICE_BRANDS_25KG) in Rice & Grains, with our own photos.

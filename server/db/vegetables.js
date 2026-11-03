@@ -1,4 +1,4 @@
-// 🥬 Fresh Vegetables catalog (2026-10-24, + 9 varieties the same day, + 7 and + 11 on 2026-10-28): our own photos (apps' public/products/vegetables/<file>.jpg, square on white).
+// 🥬 Fresh Vegetables catalog (2026-10-24, + 9 varieties the same day, + 7 and + 11 on 2026-10-28, red cabbage + tapioca on 2026-11-02): our own photos (apps' public/products/vegetables/<file>.jpg, square on white).
 // [photo file, name, sell_by, unit, old product slug it replaces (keeps its orders) or null for a new one]
 // Order = what customers see: everyday vegetables, gourds, beans & peas, roots, specials, then leafy greens (bunches).
 // Prices are as per the shop bill (the service is price_on_bill), so no prices here.
@@ -22,6 +22,7 @@ export const VEGETABLES = [
   ['okra', "Lady's Finger (Bendakaya)", ...KG, P('lady-s-finger-bendakaya')],
   ['carrot', 'Carrot', ...KG, P('carrot')],
   ['cabbage', 'Cabbage (Kosu)', ...KG, P('cabbage-kosu')],
+  ['red-cabbage', 'Red Cabbage', ...PIECE, null],
   ['cauliflower', 'Cauliflower (Gobi)', ...KG, P('cauliflower-gobi')],
   ['capsicum', 'Capsicum', ...KG, P('capsicum')],
   ['cucumber', 'Cucumber (Keera Dosakaya)', ...KG, P('cucumber-dosakaya')],
@@ -65,6 +66,7 @@ export const VEGETABLES = [
   ['radish', 'Radish (Mullangi)', ...KG, null],
   ['red-radish', 'Red Radish', ...KG, null],
   ['sweet-potato', 'Sweet Potato (Chilagada Dumpa)', ...KG, null],
+  ['tapioca', 'Tapioca (Karra Pendalam)', ...KG, null],
   ['taro-root', 'Taro Root (Chamadumpa)', ...KG, null],
   ['elephant-foot-yam', 'Elephant Foot Yam (Kanda Gadda)', ...KG, null],
   ['purple-yam', 'Purple Yam (Erra Kanda Gadda)', ...KG, null],

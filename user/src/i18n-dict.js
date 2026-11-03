@@ -2,6 +2,12 @@
 // Keys are the exact English texts (emoji and arrows around them are kept automatically: "🛒 Shop now →" uses "Shop now").
 // To add or fix a translation, add / change a line here. Texts not listed stay in English.
 export const DICT = {
+  // 🔔 blocked notifications hint (AlertsCard) and its error
+  'Notifications are blocked for this site.': ['ఈ సైట్‌కు నోటిఫికేషన్లు బ్లాక్ అయ్యాయి.', 'इस साइट के लिए नोटिफ़िकेशन बंद हैं।'],
+  'Tap the 🔒 next to the address → Permissions → Notifications: Allow, then reload.':
+    ['అడ్రస్ పక్కన ఉన్న 🔒 నొక్కండి → Permissions → Notifications: Allow, తర్వాత పేజీని రీలోడ్ చేయండి.', 'पते के पास 🔒 दबाएँ → Permissions → Notifications: Allow, फिर पेज रीलोड करें।'],
+  'Notifications are blocked. Allow them in the browser’s site settings (🔒 next to the address).':
+    ['నోటిఫికేషన్లు బ్లాక్ అయ్యాయి. బ్రౌజర్ సైట్ సెట్టింగ్స్‌లో (అడ్రస్ పక్కన 🔒) అనుమతించండి.', 'नोटिफ़िकेशन बंद हैं। ब्राउज़र की साइट सेटिंग्स (पते के पास 🔒) में अनुमति दें।'],
   // ---------- login, sign-up ----------
   'Every local service,': ['ప్రతి స్థానిక సేవ,', 'हर लोकल सेवा,'],
   'one app.': ['ఒకే యాప్‌లో.', 'एक ही ऐप में।'],
